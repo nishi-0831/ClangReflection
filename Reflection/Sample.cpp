@@ -9,10 +9,15 @@
 			E1,
 			E2,
 		};
-		Sample() {};
-		~Sample() {};
-	private:
+		[[reflect]]
 		int value;
 		EnumType e;
+		Sample() {};
+		~Sample() {};
+		[[noreturn]]
+		[[noreturn]]
+		void f() {};
+	private:
+		
 	};
 }

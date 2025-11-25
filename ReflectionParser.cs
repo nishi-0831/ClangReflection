@@ -33,14 +33,29 @@ namespace ClangTest
     {
         static unsafe void Main()
         {
-            NativeLibrary.Load(@"C:\Program Files\LLVM\bin\libclang.dll");
+            string? libclangPath = Environment.GetEnvironmentVariable("LIB_CLANG_DLL");
+            if(libclangPath == null)
+            {
+                throw new Exception("libclang.dll not found!!!!!!");
+            }
+            NativeLibrary.Load(libclangPath);
             var index = CXIndex.Create();
             var ufile = new CXUnsavedFile();
             var trans = new CXTranslationUnit();
-            var sourceFile = "Sample.cpp";
+
+            // 実行ファイルのディレクトリ
+            string exeDir = AppContext.BaseDirectory;
+
+            // プロジェクトルートを推定
+            string projectRoot = Path.GetFullPath(Path.Combine(exeDir, @"..\..\.."));
+
+            // Reflection ディレクトリ内のファイルを探す
+            string sourceFile = "Sample.cpp";
+            string reflectionDir = Path.Combine(projectRoot, "Reflection");
+            string sourcePath = Path.Combine(reflectionDir, sourceFile);
 
             // 絶対パスでファイルの存在を確認する
-            var sourcePath = Path.GetFullPath(sourceFile);
+            //var sourcePath = Path.GetFullPath(sourceFile);
             if (!File.Exists(sourcePath))
             {
                 Console.WriteLine($"ファイルが見つかりません: {sourcePath}");
@@ -49,11 +64,11 @@ namespace ClangTest
 
             // include は -I とパスを結合した一つの引数にする（"-I", "path" の配列分割は安全ではないことがある）
             var includePath = Path.GetFullPath(@"path\to\include");
-            var args = new[] { "-std=c++17", $"-I{includePath}" };
+            var args = new[] { "-std=c++20", $"-I{includePath}" };
 
             // エラーコードを受け取り、失敗なら表示する（TryParse を使う）
             
-            var err = CXTranslationUnit.TryParse(index, sourcePath, args, Array.Empty<CXUnsavedFile>(), CXTranslationUnit_Flags.CXTranslationUnit_None, out trans);
+            var err = CXTranslationUnit.TryParse(index, sourcePath, args, Array.Empty<CXUnsavedFile>(), CXTranslationUnit_Flags.CXTranslationUnit_VisitImplicitAttributes, out trans);
             if (err != CXErrorCode.CXError_Success)
             {
                 Console.WriteLine($"Parse failed: {err}");
@@ -67,6 +82,7 @@ namespace ClangTest
             List<ReflectedClass> classes = new List<ReflectedClass>();
             cursor.VisitChildren((cur, parent, clientData) =>
             {
+                Console.WriteLine( cur.kind.ToString());
                 if(cur.kind == CXCursorKind.CXCursor_ClassDecl)
                 {
                     ReflectedClass reflectedClass = pg.GetReflectedClass(cur);
@@ -105,6 +121,7 @@ namespace ClangTest
             {
                 if (child.Kind == CXCursorKind.CXCursor_FieldDecl)
                 {
+                    hasReflectAttribute(child);
                     string name = clang.getCursorSpelling(child).ToString();
                     string type = clang.getTypeSpelling(clang.getCursorType(child)).ToString();
                     CX_CXXAccessSpecifier access = clang.getCXXAccessSpecifier(child);
@@ -254,6 +271,31 @@ namespace ClangTest
                 return "protected";
             }
             return "";
+        }
+        bool hasReflectAttribute(CXCursor cursor)
+        {
+            int numAttrs = cursor.NumAttrs;
+            int numDecls = cursor.NumDecls;
+            CXType type = clang.getCursorType(cursor);
+            CX_AttrKind attrKind = type.AttrKind;
+            //cursor.
+            
+            Console.WriteLine(cursor.DeclKindSpelling.ToString());
+            for (uint i = 0; i < numAttrs;i++)
+            {
+                //CXCursor decl = cursor.GetDecl(i);
+                //decl.ToString();
+                //cursor.DeclKind
+            }
+            //for(Attr attribue in decl)
+            for(uint i = 0; i < numAttrs; i++)
+            {
+                CXCursor attr = cursor.GetAttr(i);
+
+                string attrName = clang.getCursorSpelling(attr).ToString();
+                Console.WriteLine($"Found attribute: {attrName}");
+            }
+            return true;
         }
     }
 }
