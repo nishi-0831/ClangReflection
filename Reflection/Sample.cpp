@@ -1,4 +1,6 @@
-﻿namespace test
+﻿#define UPROPERTY()
+#define UFUNCTION()
+namespace test
 {
 	class Sample1
 	{
@@ -9,13 +11,12 @@
 			E1,
 			E2,
 		};
-		[[reflect]]
+		UPROPERTY()
 		int value;
 		EnumType e;
 		Sample() {};
 		~Sample() {};
-		[[noreturn]]
-		[[noreturn]]
+		UFUNCTION()
 		void f() {};
 	private:
 		

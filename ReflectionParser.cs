@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 using System.Runtime.InteropServices;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography.X509Certificates;
-
+using System.Text.RegularExpressions;
 namespace ClangTest
 {
     class ReflectedMember
@@ -18,6 +18,7 @@ namespace ClangTest
         public string TypeName { get; set; } = "";
         public bool IsPrivate { get; set; }
         public string AccessLevel { get; set; } = "";
+        public List<string> Attributes { get; set; } = new();
     }
 
     class ReflectedClass
@@ -34,7 +35,7 @@ namespace ClangTest
         static unsafe void Main()
         {
             string? libclangPath = Environment.GetEnvironmentVariable("LIB_CLANG_DLL");
-            if(libclangPath == null)
+            if (libclangPath == null)
             {
                 throw new Exception("libclang.dll not found!!!!!!");
             }
@@ -47,7 +48,7 @@ namespace ClangTest
             string exeDir = AppContext.BaseDirectory;
 
             // プロジェクトルートを推定
-            string projectRoot = Path.GetFullPath(Path.Combine(exeDir, @"..\..\.."));
+            string projectRoot = Path.GetFullPath(Path.Combine(exeDir, @"..\..\..\.."));
 
             // Reflection ディレクトリ内のファイルを探す
             string sourceFile = "Sample.cpp";
@@ -62,31 +63,33 @@ namespace ClangTest
                 return;
             }
 
+            // ソースから属性を抽出
+            Dictionary<string,List<string>> attributeMap = ExtractAttributesFromSource(sourcePath);
+
             // include は -I とパスを結合した一つの引数にする（"-I", "path" の配列分割は安全ではないことがある）
             var includePath = Path.GetFullPath(@"path\to\include");
             var args = new[] { "-std=c++20", $"-I{includePath}" };
 
             // エラーコードを受け取り、失敗なら表示する（TryParse を使う）
-            
-            var err = CXTranslationUnit.TryParse(index, sourcePath, args, Array.Empty<CXUnsavedFile>(), CXTranslationUnit_Flags.CXTranslationUnit_VisitImplicitAttributes, out trans);
+
+            var err = CXTranslationUnit.TryParse(index, sourcePath, args, Array.Empty<CXUnsavedFile>(),
+                CXTranslationUnit_Flags.CXTranslationUnit_None, out trans);
             if (err != CXErrorCode.CXError_Success)
             {
                 Console.WriteLine($"Parse failed: {err}");
                 return;
             }
 
-            var cursor = trans.Cursor;
-            // 本当はここでエラーチェックが好ましい
-            var pg = new ReflectionParser();
+            CXCursor cursor = trans.Cursor;
+            ReflectionParser pg = new ReflectionParser();
 
             List<ReflectedClass> classes = new List<ReflectedClass>();
             cursor.VisitChildren((cur, parent, clientData) =>
             {
-                Console.WriteLine( cur.kind.ToString());
-                if(cur.kind == CXCursorKind.CXCursor_ClassDecl)
+                if (cur.kind == CXCursorKind.CXCursor_ClassDecl)
                 {
-                    ReflectedClass reflectedClass = pg.GetReflectedClass(cur);
-                    if(reflectedClass != null)
+                    ReflectedClass reflectedClass = pg.GetReflectedClass(cur, attributeMap);
+                    if (reflectedClass != null)
                     {
                         classes.Add(reflectedClass);
                     }
@@ -101,14 +104,15 @@ namespace ClangTest
                 Console.WriteLine($"Class: {rc.NameSpace}::{rc.ClassName} (Header: {rc.HeaderFile})");
                 foreach (var m in rc.Members)
                 {
-                    Console.WriteLine($"  {m.AccessLevel} {m.TypeName} {m.Name}");
+                    string attrs = m.Attributes.Count > 0 ? $"[{string.Join(",",m.Attributes)}]" : "";
+                    Console.WriteLine($"  {m.AccessLevel} {m.TypeName} {m.Name} {attrs}");
                 }
             }
         }
         protected List<string> _namespace = new List<string>();
         protected String _namespaceStr = "";
 
-        unsafe ReflectedClass GetReflectedClass(CXCursor classCursor)
+        unsafe ReflectedClass GetReflectedClass(CXCursor classCursor,Dictionary<string,List<string>> attributeMap)
         {
             ReflectedClass reflectedClass = new ReflectedClass()
             {
@@ -125,12 +129,19 @@ namespace ClangTest
                     string name = clang.getCursorSpelling(child).ToString();
                     string type = clang.getTypeSpelling(clang.getCursorType(child)).ToString();
                     CX_CXXAccessSpecifier access = clang.getCXXAccessSpecifier(child);
+
+                    List<string> attrs = new List<string>();
+                    if(attributeMap.ContainsKey(name))
+                    {
+                        attrs = attributeMap[name];
+                    }
                     fields.Add(new ReflectedMember
                     {
                         Name = name,
                         TypeName = type,
                         IsPrivate = (access == CX_CXXAccessSpecifier.CX_CXXPrivate),
-                        AccessLevel = getAccessLevel(child)
+                        AccessLevel = getAccessLevel(child),
+                        Attributes = attrs
                     });
                 }
                 return CXChildVisitResult.CXChildVisit_Continue;
@@ -142,7 +153,7 @@ namespace ClangTest
         }
         ReflectedClass? Parse(string file)
         {
-            string path  = Path.GetFullPath(file);
+            string path = Path.GetFullPath(file);
             if (!File.Exists(path))
             {
                 return null;
@@ -249,7 +260,7 @@ namespace ClangTest
         string getNameSpace(CXCursor cursor)
         {
             CXCursor parent = cursor.SemanticParent;
-            if(parent.kind == CXCursorKind.CXCursor_Namespace)
+            if (parent.kind == CXCursorKind.CXCursor_Namespace)
             {
                 return parent.Spelling.ToString();
             }
@@ -258,15 +269,15 @@ namespace ClangTest
         string getAccessLevel(CXCursor cursor)
         {
             CX_CXXAccessSpecifier access = clang.getCXXAccessSpecifier(cursor);
-            if(access == CX_CXXAccessSpecifier.CX_CXXPrivate)
+            if (access == CX_CXXAccessSpecifier.CX_CXXPrivate)
             {
                 return "private";
             }
-            else if(access == CX_CXXAccessSpecifier.CX_CXXPublic)
+            else if (access == CX_CXXAccessSpecifier.CX_CXXPublic)
             {
                 return "public";
             }
-            else if(access == CX_CXXAccessSpecifier.CX_CXXProtected)
+            else if (access == CX_CXXAccessSpecifier.CX_CXXProtected)
             {
                 return "protected";
             }
@@ -274,28 +285,35 @@ namespace ClangTest
         }
         bool hasReflectAttribute(CXCursor cursor)
         {
-            int numAttrs = cursor.NumAttrs;
-            int numDecls = cursor.NumDecls;
-            CXType type = clang.getCursorType(cursor);
-            CX_AttrKind attrKind = type.AttrKind;
-            //cursor.
-            
-            Console.WriteLine(cursor.DeclKindSpelling.ToString());
-            for (uint i = 0; i < numAttrs;i++)
-            {
-                //CXCursor decl = cursor.GetDecl(i);
-                //decl.ToString();
-                //cursor.DeclKind
-            }
-            //for(Attr attribue in decl)
-            for(uint i = 0; i < numAttrs; i++)
-            {
-                CXCursor attr = cursor.GetAttr(i);
 
-                string attrName = clang.getCursorSpelling(attr).ToString();
-                Console.WriteLine($"Found attribute: {attrName}");
-            }
             return true;
+        }
+        static Dictionary<string, List<string>> ExtractAttributesFromSource(string sourceFilePath)
+        {
+            string sourceCode = File.ReadAllText(sourceFilePath);
+            Dictionary<string, List<string>> attributeMap = new Dictionary<string, List<string>>();
+
+            string pattern = $@"(UPROPERTY|UFUNCTION)\s*\(\s*\)\s*" +
+                @"(?:(?:const|volatile|static|mutable|virtual)\s+)*" +
+                @"(?:[\w:<>,\s&*]+?)\s+" +
+                @"(\w+)\s*[;=]";
+
+            MatchCollection matches = Regex.Matches(sourceCode, pattern, RegexOptions.Multiline);
+            foreach (Match match in matches)
+            {
+                if (match.Groups.Count > 0)
+                {
+                    string macroName = match.Groups[1].Value;
+                    string fieldName = match.Groups[2].Value;
+
+                    if (attributeMap.ContainsKey(fieldName) == false)
+                    {
+                        attributeMap[fieldName] = new List<string>();
+                    }
+                    attributeMap[fieldName].Add(macroName);
+                }
+            }
+            return attributeMap;
         }
     }
 }
