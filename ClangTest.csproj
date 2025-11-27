@@ -10,12 +10,20 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Remove="Generated\Sample1.h" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="ClangSharp" Version="20.1.2.4" />
     <PackageReference Include="ClangSharp.Interop" Version="20.1.2.4" />
     <PackageReference Include="libClangSharp" Version="20.1.2" />
     <PackageReference Include="libClangSharp.runtime.win-x64" Version="20.1.2" />
     <PackageReference Include="Scriban" Version="6.5.2" />
   </ItemGroup>
+
+  <Target Name="PreBuild" BeforeTargets="PreBuildEvent">
+    <Exec Command="ECHO $(ProjectDir) &gt; $(TargetDir)ProjectDirPath.txt&#xD;&#xA;" />
+  </Target>
 
 </Project>
 

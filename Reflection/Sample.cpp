@@ -1,9 +1,13 @@
 ﻿#include <iostream>
 #include "Hoge.h"
-#define UPROPERTY()
-#define UFUNCTION()
+#define MT_PROPERTY()
+#define MT_FUNCTION()
+#define MT_COMPONENT()
+
+
 namespace test
 {
+	MT_COMPONENT()
 	class Sample1
 	{
 	public :
@@ -13,12 +17,12 @@ namespace test
 			E1,
 			E2,
 		};
-		UPROPERTY()
+		MT_PROPERTY()
 		int value;
 		EnumType e;
 		Sample() {};
 		~Sample() {};
-		UFUNCTION()
+		MT_FUNCTION()
 		void f() {};
 	private:
 		Hoge hoge;

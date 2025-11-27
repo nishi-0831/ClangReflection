@@ -1,6 +1,8 @@
 ﻿// {{class.NameSpace}}::{{class.ClassName}}.h
 #pragma once
-
+{{for header in class.HeaderFile}}
+#include {{header}}
+    {{ end }}
 namespace {{ class.NameSpace }} {
 class {{ class.ClassName }} {
 public:

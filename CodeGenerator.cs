@@ -30,7 +30,11 @@ namespace ClangTest
 
             string headerResult = headerTemplate.Render(model, member => member.Name);
 
-            File.WriteAllText($"{reflectedClass.ClassName}.h", headerResult);
+            string fileName = $"{reflectedClass.ClassName}.h";
+            string filePath = Path.GetFullPath(Path.Combine(ReflectionParser.ProjectDir, reflectedClass.Directory));
+            string generatePath = Path.GetFullPath(Path.Combine(filePath, fileName));
+            
+            File.WriteAllText(generatePath, headerResult);
         }
     }
 }

@@ -10,6 +10,8 @@ using System.Runtime.InteropServices;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.RegularExpressions;
+using System.Reflection;
+using System.IO.Enumeration;
 namespace ClangTest
 {
     class ReflectedMember
@@ -26,7 +28,10 @@ namespace ClangTest
         public string ClassName { get; set; } = "";
         public string NameSpace { get; set; } = "";
         public List<ReflectedMember> Members { get; set; } = new();
-        public string HeaderFile { get; set; } = "";
+        public List<string> HeaderFile { get; set; } = new();
+        public string Directory { get; set; } = "";
+        public List<string> Attributes { get; set; } = new();
+
     }
 
 
@@ -38,6 +43,15 @@ namespace ClangTest
             if (libclangPath == null)
             {
                 throw new Exception("libclang.dll not found!!!!!!");
+            }
+            if (File.Exists("ProjectDirPath.txt"))
+            {
+                using (StreamReader sr = new StreamReader("ProjectDirPath.txt"))
+                {
+                    // 改行や空白を除去
+                    projectDir = sr.ReadToEnd().Trim();
+                    //Console.WriteLine(projectDir);
+                }
             }
             NativeLibrary.Load(libclangPath);
             var index = CXIndex.Create();
@@ -65,7 +79,7 @@ namespace ClangTest
             }
 
             // ソースから属性を抽出
-            Dictionary<string,List<string>> attributeMap = ExtractAttributesFromSource(sourcePath);
+            Dictionary<string, List<string>> attributeMap = ExtractAttributesFromSource(sourcePath);
 
             // include は -I とパスを結合した一つの引数にする（"-I", "path" の配列分割は安全ではないことがある）
             var includePath = Path.GetFullPath(@"path\to\include");
@@ -81,18 +95,17 @@ namespace ClangTest
                 return;
             }
             List<ReflectedClass> classes = new List<ReflectedClass>();
-            trans.GetInclusions(new CXInclusionVisitor(InclusionVisitor), new CXClientData());
 
             CXCursor cursor = trans.Cursor;
             ReflectionParser pg = new ReflectionParser();
 
             cursor.VisitChildren((cur, parent, clientData) =>
             {
-                
-                if(cur.kind == CXCursorKind.CXCursor_InclusionDirective)
+
+                CXSourceLocation cxSourceLocation = clang.getCursorLocation(cur);
+                if (cxSourceLocation.IsFromMainFile == false)
                 {
-                    var includedFile = cursor.Spelling.ToString();
-                    Console.WriteLine($"Included: {includedFile}");
+                    return CXChildVisitResult.CXChildVisit_Continue;
                 }
                 if (cur.kind == CXCursorKind.CXCursor_ClassDecl)
                 {
@@ -100,6 +113,16 @@ namespace ClangTest
                     if (reflectedClass != null)
                     {
                         classes.Add(reflectedClass);
+                    }
+                    var handle = GCHandle.Alloc(reflectedClass);
+                    try
+                    {
+                        trans.GetInclusions(new CXInclusionVisitor(InclusionVisitor), new CXClientData(GCHandle.ToIntPtr(handle)));
+
+                    }
+                    finally
+                    {
+                        handle.Free();
                     }
 
 
@@ -109,32 +132,53 @@ namespace ClangTest
             }, new CXClientData());
 
             // 結果をコンソール出力
-            //foreach (var rc in classes)
-            //{
-            //    Console.WriteLine($"Class: {rc.NameSpace}::{rc.ClassName} (Header: {rc.HeaderFile})");
-            //    foreach (var m in rc.Members)
-            //    {
-            //        string attrs = m.Attributes.Count > 0 ? $"[{string.Join(",",m.Attributes)}]" : "";
-            //        Console.WriteLine($"  {m.AccessLevel} {m.TypeName} {m.Name} {attrs}");
-            //    }
-            //}
-            foreach(ReflectedClass reflectedClass in classes)
+            foreach (var rc in classes)
+            {
+                Console.WriteLine(rc.Directory);
+                foreach(string attribute in rc.Attributes)
+                {
+                    Console.WriteLine($"[{attribute}]");
+                }
+                Console.WriteLine($"Class: {rc.NameSpace}::{rc.ClassName}");
+                foreach (var m in rc.Members)
+                {
+                    string attrs = m.Attributes.Count > 0 ? $"[{string.Join(",", m.Attributes)}]" : "";
+                    Console.WriteLine($"  {m.AccessLevel} {m.TypeName} {m.Name} {attrs}");
+                }
+                foreach (string header in rc.HeaderFile)
+                {
+                    Console.WriteLine($"Header:{header}");
+                }
+            }
+            foreach (ReflectedClass reflectedClass in classes)
             {
                 //CodeGenerator.Generate(reflectedClass);
             }
         }
-        
+
         protected List<string> _namespace = new List<string>();
         protected String _namespaceStr = "";
+        protected static string projectDir = "";
+        public string ClassName { get; set; } = "";
 
+        public static string ProjectDir 
+            {
+                get { return  projectDir; }
+            }
         unsafe ReflectedClass GetReflectedClass(CXCursor classCursor,Dictionary<string,List<string>> attributeMap)
         {
+            // クラスの情報取得
             ReflectedClass reflectedClass = new ReflectedClass()
             {
                 ClassName = clang.getCursorSpelling(classCursor).ToString(),
                 NameSpace = getNameSpace(classCursor)
             };
+            if(attributeMap.ContainsKey(reflectedClass.ClassName))
+            {
+                reflectedClass.Attributes = attributeMap[reflectedClass.ClassName];
+            }
 
+            // メンバの情報取得
             List<ReflectedMember> fields = new List<ReflectedMember>();
             classCursor.VisitChildren((child, parent, clientData) =>
             {
@@ -163,25 +207,9 @@ namespace ClangTest
             }, new CXClientData());
 
             reflectedClass.Members = fields;
-            reflectedClass.HeaderFile = classCursor.IncludedFile.ToString();
             return reflectedClass;
         }
-        ReflectedClass? Parse(string file)
-        {
-            string path = Path.GetFullPath(file);
-            if (!File.Exists(path))
-            {
-                return null;
-            }
-
-            ReflectedClass result = new ReflectedClass()
-            {
-                HeaderFile = path,
-                NameSpace = _namespaceStr
-            };
-
-            return result;
-        }
+       
         unsafe CXChildVisitResult visitChild(CXCursor cursor, CXCursor parent, void* client_data)
         {
             switch (cursor.kind)
@@ -231,26 +259,58 @@ namespace ClangTest
         static unsafe void InclusionVisitor(void* file, CXSourceLocation* stack,uint len, void* clientData)
         {
             CXFile cxFile = new CXFile((IntPtr)file);
-            
             var fileName = clang.getFileName(cxFile).ToString();
-            if(len == 0)
+            
+
+            GCHandle handle = GCHandle.FromIntPtr((IntPtr)clientData);
+            ReflectedClass? reflectedClass = (ReflectedClass?)handle.Target;
+            if (reflectedClass == null)
             {
-                Console.WriteLine($"{fileName} is maybe from main file");
+                Console.Error.WriteLine("ReflectedClass is null !!!");
                 return;
+            }
+
+            if (len == 0)
+            {
+                string relativeHeader = Path.GetRelativePath(ReflectionParser.projectDir.Trim(), fileName.Trim());
+                string directory = Path.GetDirectoryName(relativeHeader) ?? "";
+                reflectedClass.Directory = directory;
+                
+                return;
+            }
+            if (stack->IsFromMainFile)
+            {
+                string relativeHeader = ParseFileName(fileName);
+                reflectedClass.HeaderFile.Add(relativeHeader);
+                return;
+            }
+        }
+        static string ParseFileName(string fileName)
+        {
+            string includePath;
+            string relativeHeader;
+            string lowerFileName = fileName.Replace('\\', '/').ToLower();
+
+            if (lowerFileName.Contains("/include/"))
+            {
+                // includeディレクトリ以降を抽出
+                int idx = lowerFileName.IndexOf("/include/");
+                relativeHeader = fileName.Substring(idx + "/include/".Length);
+                includePath = ($"<{relativeHeader}>");
+            }
+            else if (fileName.StartsWith(ReflectionParser.projectDir, StringComparison.OrdinalIgnoreCase))
+            {
+                // プロジェクト配下のファイル
+                relativeHeader = Path.GetRelativePath(ReflectionParser.projectDir.Trim(), fileName.Trim());
+                includePath = ($"\"{relativeHeader}\"");
             }
             else
             {
-                if (stack->IsInSystemHeader)
-                {
-                    Console.WriteLine($"in system header: {fileName}");
-                    return;
-                }
-                if (stack->IsFromMainFile)
-                {
-                    Console.WriteLine($"from main file: {fileName}");
-                    return;
-                }
+                // 絶対パスのまま
+                relativeHeader = fileName;
+                includePath = ($"\"{relativeHeader}\"");
             }
+            return includePath;
         }
         void readNamespace(CXCursor cursor)
         {
@@ -333,13 +393,18 @@ namespace ClangTest
             string sourceCode = File.ReadAllText(sourceFilePath);
             Dictionary<string, List<string>> attributeMap = new Dictionary<string, List<string>>();
 
-            string pattern = $@"(UPROPERTY|UFUNCTION)\s*\(\s*\)\s*" +
+            // 変数・関数用
+            string memberPattern = $@"(MT_PROPERTY|MT_FUNCTION)\s*\(\s*\)\s*" +
                 @"(?:(?:const|volatile|static|mutable|virtual)\s+)*" +
                 @"(?:[\w:<>,\s&*]+?)\s+" +
                 @"(\w+)\s*[;=]";
 
-            MatchCollection matches = Regex.Matches(sourceCode, pattern, RegexOptions.Multiline);
-            foreach (Match match in matches)
+            // クラス・構造体用
+            string classPattern = $@"(MT_COMPONENT)\s*\(\s*\)\s*class\s+(\w+)";
+
+
+            MatchCollection memberMatch = Regex.Matches(sourceCode, memberPattern, RegexOptions.Multiline);
+            foreach (Match match in memberMatch)
             {
                 if (match.Groups.Count > 0)
                 {
@@ -351,6 +416,20 @@ namespace ClangTest
                         attributeMap[fieldName] = new List<string>();
                     }
                     attributeMap[fieldName].Add(macroName);
+                }
+            }
+            MatchCollection classMatch = Regex.Matches(sourceCode, classPattern, RegexOptions.Multiline);
+            foreach (Match match in classMatch)
+            {
+                if(match.Groups.Count > 0)
+                {
+                    string macroName = match.Groups[1].Value;
+                    string className = match.Groups[2].Value;
+                    if(attributeMap.ContainsKey(className) == false)
+                    {
+                        attributeMap[className] = new List<string>();
+                    }
+                    attributeMap[className].Add(macroName);
                 }
             }
             return attributeMap;
