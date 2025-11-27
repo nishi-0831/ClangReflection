@@ -44,11 +44,12 @@ namespace ClangTest
             var ufile = new CXUnsavedFile();
             var trans = new CXTranslationUnit();
 
+
             // 実行ファイルのディレクトリ
             string exeDir = AppContext.BaseDirectory;
 
             // プロジェクトルートを推定
-            string projectRoot = Path.GetFullPath(Path.Combine(exeDir, @"..\..\..\.."));
+            string projectRoot = Path.GetFullPath(Path.Combine(exeDir, @"..\..\.."));
 
             // Reflection ディレクトリ内のファイルを探す
             string sourceFile = "Sample.cpp";
@@ -79,13 +80,20 @@ namespace ClangTest
                 Console.WriteLine($"Parse failed: {err}");
                 return;
             }
+            List<ReflectedClass> classes = new List<ReflectedClass>();
+            trans.GetInclusions(new CXInclusionVisitor(InclusionVisitor), new CXClientData());
 
             CXCursor cursor = trans.Cursor;
             ReflectionParser pg = new ReflectionParser();
 
-            List<ReflectedClass> classes = new List<ReflectedClass>();
             cursor.VisitChildren((cur, parent, clientData) =>
             {
+                
+                if(cur.kind == CXCursorKind.CXCursor_InclusionDirective)
+                {
+                    var includedFile = cursor.Spelling.ToString();
+                    Console.WriteLine($"Included: {includedFile}");
+                }
                 if (cur.kind == CXCursorKind.CXCursor_ClassDecl)
                 {
                     ReflectedClass reflectedClass = pg.GetReflectedClass(cur, attributeMap);
@@ -93,22 +101,29 @@ namespace ClangTest
                     {
                         classes.Add(reflectedClass);
                     }
+
+
                 }
                 return CXChildVisitResult.CXChildVisit_Recurse;
 
             }, new CXClientData());
 
             // 結果をコンソール出力
-            foreach (var rc in classes)
+            //foreach (var rc in classes)
+            //{
+            //    Console.WriteLine($"Class: {rc.NameSpace}::{rc.ClassName} (Header: {rc.HeaderFile})");
+            //    foreach (var m in rc.Members)
+            //    {
+            //        string attrs = m.Attributes.Count > 0 ? $"[{string.Join(",",m.Attributes)}]" : "";
+            //        Console.WriteLine($"  {m.AccessLevel} {m.TypeName} {m.Name} {attrs}");
+            //    }
+            //}
+            foreach(ReflectedClass reflectedClass in classes)
             {
-                Console.WriteLine($"Class: {rc.NameSpace}::{rc.ClassName} (Header: {rc.HeaderFile})");
-                foreach (var m in rc.Members)
-                {
-                    string attrs = m.Attributes.Count > 0 ? $"[{string.Join(",",m.Attributes)}]" : "";
-                    Console.WriteLine($"  {m.AccessLevel} {m.TypeName} {m.Name} {attrs}");
-                }
+                //CodeGenerator.Generate(reflectedClass);
             }
         }
+        
         protected List<string> _namespace = new List<string>();
         protected String _namespaceStr = "";
 
@@ -211,6 +226,31 @@ namespace ClangTest
                 Console.WriteLine("{0} {1}", clang.getCursorSpelling(cursor), clang.getEnumConstantDeclValue(cursor));
             }
             return CXChildVisitResult.CXChildVisit_Continue;
+        }
+
+        static unsafe void InclusionVisitor(void* file, CXSourceLocation* stack,uint len, void* clientData)
+        {
+            CXFile cxFile = new CXFile((IntPtr)file);
+            
+            var fileName = clang.getFileName(cxFile).ToString();
+            if(len == 0)
+            {
+                Console.WriteLine($"{fileName} is maybe from main file");
+                return;
+            }
+            else
+            {
+                if (stack->IsInSystemHeader)
+                {
+                    Console.WriteLine($"in system header: {fileName}");
+                    return;
+                }
+                if (stack->IsFromMainFile)
+                {
+                    Console.WriteLine($"from main file: {fileName}");
+                    return;
+                }
+            }
         }
         void readNamespace(CXCursor cursor)
         {

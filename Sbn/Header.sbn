@@ -1,0 +1,28 @@
+﻿// {{class.NameSpace}}::{{class.ClassName}}.h
+#pragma once
+
+namespace {{ class.NameSpace }} {
+class {{ class.ClassName }} {
+public:
+    {{ for member in class.Members }}
+    {{~ if member.AccessLevel == "public" ~}}
+    {{ for attr in member.Attributes }}// [{{attr}}] {{ end }}
+    {{ member.TypeName }} {{ member.Name }};
+    {{~ end ~}}
+    {{ end }}
+protected:
+    {{ for member in class.Members }}
+    {{~ if member.AccessLevel == "protected" ~}}
+    {{ for attr in member.Attributes }}// [{{attr}}] {{ end }}
+    {{ member.TypeName }} {{ member.Name }};
+    {{~ end ~}}
+    {{ end }}
+private:
+    {{ for member in class.Members }}
+    {{~ if member.AccessLevel == "private" ~}}
+    {{ for attr in member.Attributes }}// [{{attr}}] {{ end }}
+    {{ member.TypeName }} {{ member.Name }};
+    {{~ end ~}}
+    {{ end }}
+};
+}

@@ -1,4 +1,6 @@
-﻿#define UPROPERTY()
+﻿#include <iostream>
+#include "Hoge.h"
+#define UPROPERTY()
 #define UFUNCTION()
 namespace test
 {
@@ -19,6 +21,6 @@ namespace test
 		UFUNCTION()
 		void f() {};
 	private:
-		
+		Hoge hoge;
 	};
 }
