@@ -14,27 +14,7 @@ using System.Reflection;
 using System.IO.Enumeration;
 namespace ClangTest
 {
-    class ReflectedMember
-    {
-        public string Name { get; set; } = "";
-        public string TypeName { get; set; } = "";
-        public bool IsPrivate { get; set; }
-        public string AccessLevel { get; set; } = "";
-        public List<string> Attributes { get; set; } = new();
-    }
-
-    class ReflectedClass
-    {
-        public string ClassName { get; set; } = "";
-        public string NameSpace { get; set; } = "";
-        public List<ReflectedMember> Members { get; set; } = new();
-        public List<string> HeaderFile { get; set; } = new();
-        public string Directory { get; set; } = "";
-        public List<string> Attributes { get; set; } = new();
-
-    }
-
-
+    
     class ReflectionParser
     {
         static unsafe void Main()
@@ -58,7 +38,6 @@ namespace ClangTest
             var ufile = new CXUnsavedFile();
             var trans = new CXTranslationUnit();
 
-
             // 実行ファイルのディレクトリ
             string exeDir = AppContext.BaseDirectory;
 
@@ -66,7 +45,7 @@ namespace ClangTest
             string projectRoot = Path.GetFullPath(Path.Combine(exeDir, @"..\..\.."));
 
             // Reflection ディレクトリ内のファイルを探す
-            string sourceFile = "Sample.cpp";
+            string sourceFile = "Transform.h";
             string reflectionDir = Path.Combine(projectRoot, "Reflection");
             string sourcePath = Path.Combine(reflectionDir, sourceFile);
 
@@ -82,19 +61,32 @@ namespace ClangTest
             Dictionary<string, List<string>> attributeMap = ExtractAttributesFromSource(sourcePath);
 
             // include は -I とパスを結合した一つの引数にする（"-I", "path" の配列分割は安全ではないことがある）
-            var includePath = Path.GetFullPath(@"path\to\include");
-            var args = new[] { "-std=c++20", $"-I{includePath}" };
+            var includePath = Path.GetFullPath(Path.Combine(projectRoot,"Reflection"));
+            var args = new[] { "-std=c++20", $"-I{includePath}","-x", "c++-header","-w" };
 
             // エラーコードを受け取り、失敗なら表示する（TryParse を使う）
 
             var err = CXTranslationUnit.TryParse(index, sourcePath, args, Array.Empty<CXUnsavedFile>(),
-                CXTranslationUnit_Flags.CXTranslationUnit_None, out trans);
+                CXTranslationUnit_Flags.CXTranslationUnit_DetailedPreprocessingRecord, out trans);
             if (err != CXErrorCode.CXError_Success)
             {
                 Console.WriteLine($"Parse failed: {err}");
+                var numDiagnostics = trans.NumDiagnostics;
+                for (uint i = 0; i < numDiagnostics; i++)
+                {
+                    var diagnositc = trans.GetDiagnostic(i);
+                    Console.WriteLine($"Diagnostic {i}: {diagnositc.Spelling}");
+                    diagnositc.Dispose();
+                }
                 return;
             }
-            List<ReflectedClass> classes = new List<ReflectedClass>();
+            else
+            {
+                
+                Console.WriteLine("Parse success");
+                return;
+            }
+                List<ReflectedClass> classes = new List<ReflectedClass>();
 
             CXCursor cursor = trans.Cursor;
             ReflectionParser pg = new ReflectionParser();

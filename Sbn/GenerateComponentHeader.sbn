@@ -1,0 +1,60 @@
+// {{ class_name }}.generated.h
+#pragma once
+
+// DTO構造体
+struct {{ class_name }}DTO
+{
+{{- for member in properties }}
+	{{ member.type_name }} {{ member.name }};
+{{- endfor }}
+};
+
+// マクロ展開部分... 
+#define MT_GENERATED_BODY_{{ class_name }}() \
+	public: \
+	using DTO = {{ class_name }}DTO; \
+	\
+	IMemento* SaveToMemento() \
+	{ \
+		{{ class_name }}DTO dto; \
+{{- for member in properties }}
+		dto.{{ member.name }} = this->{{ member.name }}; \
+{{- endfor }}
+		return new ComponentMemento<{{ class_name }}, {{ class_name }}DTO>(GetEntityId(), dto); \
+	} \
+	\
+	void RestoreFromMemento(const ComponentMemento<{{ class_name }}, {{ class_name }}DTO>& _memento) \
+	{ \
+		const {{ class_name }}DTO& dto = _memento.GetDTO(); \
+{{- for member in properties }}
+		this->{{ member.name }} = dto.{{ member.name }}; \
+{{- endfor }}
+		OnPostRestore(); \
+	} \
+	\
+	friend struct {{ class_name }}_Register;
+
+// JSONシリアライズ定義
+NLOHMANN_DEFINE_TYPE_INTRUSIVE({{ class_name }}, {{ properties | map "name" | join ", " }})
+
+// Memento型定義
+using {{ class_name }}Memento = ComponentMemento<{{ class_name }}, {{ class_name }}DTO>;
+
+// ImGui表示処理登録
+struct {{ class_name }}_Register
+{
+	{{ class_name }}_Register()
+	{
+		RegisterShowFuncHolder::Set<{{ class_name }}>([]({{ class_name }}* _target, const char* _name)
+		{
+{{- for member in properties }}
+			TypeRegistry::Instance().CallFunc(&_target->{{ member.name }}, "{{ member.name }}");
+{{- endfor }}
+		});
+	}
+};
+
+static {{ class_name }}_Register {{ class_name | downcase }}_register;
+
+// マクロ上書き
+#define MT_GENERATED_BODY() MT_GENERATED_BODY_{{ class_name }}()
