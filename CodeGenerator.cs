@@ -12,6 +12,51 @@ namespace ClangTest
     
     class CodeGenerator
     {
+        private string projectRoot;
+        private AnalysisCache cache;
+        private ReflectionParser reflectionParser;
+
+        CodeGenerator(string projectRoot)
+        {
+            this.projectRoot = projectRoot;
+            this.cache = new AnalysisCache();
+            this.reflectionParser = new ReflectionParser();
+            cache.LoadCache();
+        }
+        void Run()
+        {
+            int headerCount = 0, skipped = 0, regenerated = 0;
+
+            var headerFiles = Directory.GetFiles(projectRoot, "*.h", SearchOption.AllDirectories)
+            .ToList();
+            headerCount = headerFiles.Count;
+            foreach (var headerFile in headerFiles)
+            {
+                // ファイルが存在するか
+                if (File.Exists(headerFile))
+                    continue;
+
+                // 生成する必要があるか
+                if(cache.NeedsRegeneration(headerFile))
+                {
+                    ReflectedClass reflectedClass = reflectionParser.Parse(headerFile);
+                    Generate(reflectedClass);
+                    cache.UpdateCache(headerFile);
+                    // 生成数をカウント
+                    regenerated++;
+                }
+                else
+                {
+                    // スキップ数をカウント
+                    skipped++;
+                }
+            }
+            // キャッシュを保存
+            cache.SaveCache();
+
+            Console.WriteLine();
+            Console.WriteLine($"Result:headerCount,{headerCount} regenerated,{regenerated} skipped,{skipped}");
+        }
         public static void Generate(ReflectedClass reflectedClass)
         {
             if(reflectedClass.Attributes.Contains("MT_COMPONENT") == false)

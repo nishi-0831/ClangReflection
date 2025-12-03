@@ -17,25 +17,26 @@ namespace ClangTest
     
     class ReflectionParser
     {
-        static unsafe void Main()
+        public ReflectionParser() 
         {
             string? libclangPath = Environment.GetEnvironmentVariable("LIB_CLANG_DLL");
             if (libclangPath == null)
             {
                 throw new Exception("libclang.dll not found!!!!!!");
             }
+            NativeLibrary.Load(libclangPath);
             if (File.Exists("ProjectDirPath.txt"))
             {
                 using (StreamReader sr = new StreamReader("ProjectDirPath.txt"))
                 {
                     // 改行や空白を除去
                     projectDir = sr.ReadToEnd().Trim();
-                    //Console.WriteLine(projectDir);
                 }
             }
-            NativeLibrary.Load(libclangPath);
+        }
+        static unsafe void Main()
+        {
             var index = CXIndex.Create();
-            var ufile = new CXUnsavedFile();
             var trans = new CXTranslationUnit();
 
             // 実行ファイルのディレクトリ
@@ -50,7 +51,6 @@ namespace ClangTest
             string sourcePath = Path.Combine(reflectionDir, sourceFile);
 
             // 絶対パスでファイルの存在を確認する
-            //var sourcePath = Path.GetFullPath(sourceFile);
             if (!File.Exists(sourcePath))
             {
                 Console.WriteLine($"ファイルが見つかりません: {sourcePath}");
@@ -116,32 +116,11 @@ namespace ClangTest
                     {
                         handle.Free();
                     }
-
-
                 }
                 return CXChildVisitResult.CXChildVisit_Recurse;
 
             }, new CXClientData());
-
-            // 結果をコンソール出力
-            foreach (var rc in classes)
-            {
-                Console.WriteLine(rc.Directory);
-                foreach(string attribute in rc.Attributes)
-                {
-                    Console.WriteLine($"[{attribute}]");
-                }
-                Console.WriteLine($"Class: {rc.NameSpace}::{rc.ClassName}");
-                foreach (var m in rc.Members)
-                {
-                    string attrs = m.Attributes.Count > 0 ? $"[{string.Join(",", m.Attributes)}]" : "";
-                    Console.WriteLine($"  {m.AccessLevel} {m.TypeName} {m.Name} {attrs}");
-                }
-                foreach (string header in rc.HeaderFile)
-                {
-                    Console.WriteLine($"Header:{header}");
-                }
-            }
+            
             foreach (ReflectedClass reflectedClass in classes)
             {
                 //CodeGenerator.Generate(reflectedClass);
@@ -157,7 +136,87 @@ namespace ClangTest
             {
                 get { return  projectDir; }
             }
-        unsafe ReflectedClass GetReflectedClass(CXCursor classCursor,Dictionary<string,List<string>> attributeMap)
+
+        public unsafe ReflectedClass Parse(string filePath)
+        {
+            var index = CXIndex.Create();
+            var trans = new CXTranslationUnit();
+
+            // Reflection ディレクトリ内のファイルを探す
+            string reflectionDir = Path.Combine(projectDir, "Reflection");
+            string sourcePath = Path.Combine(reflectionDir, filePath);
+
+            // 絶対パスでファイルの存在を確認する
+            if (!File.Exists(sourcePath))
+            {
+                Console.WriteLine($"ファイルが見つかりません: {sourcePath}");
+                //return;
+            }
+
+            // ソースから属性を抽出
+            Dictionary<string, List<string>> attributeMap = ExtractAttributesFromSource(sourcePath);
+
+            // include は -I とパスを結合した一つの引数にする（"-I", "path" の配列分割は安全ではないことがある）
+            var includePath = Path.GetFullPath(Path.Combine(reflectionDir, "Reflection"));
+            var args = new[] { "-std=c++20", $"-I{includePath}", "-x", "c++-header", "-w" };
+
+            // エラーコードを受け取り、失敗なら表示する（TryParse を使う）
+
+            var err = CXTranslationUnit.TryParse(index, sourcePath, args, Array.Empty<CXUnsavedFile>(),
+                CXTranslationUnit_Flags.CXTranslationUnit_DetailedPreprocessingRecord, out trans);
+            if (err != CXErrorCode.CXError_Success)
+            {
+                Console.WriteLine($"Parse failed: {err}");
+                var numDiagnostics = trans.NumDiagnostics;
+                for (uint i = 0; i < numDiagnostics; i++)
+                {
+                    var diagnositc = trans.GetDiagnostic(i);
+                    Console.WriteLine($"Diagnostic {i}: {diagnositc.Spelling}");
+                    diagnositc.Dispose();
+                }
+                //return;
+            }
+            else
+            {
+                Console.WriteLine("Parse success");
+                //return;
+            }
+            List<ReflectedClass> classes = new List<ReflectedClass>();
+            ReflectedClass result = new ReflectedClass();
+            CXCursor cursor = trans.Cursor;
+            ReflectionParser pg = new ReflectionParser();
+
+            cursor.VisitChildren((cur, parent, clientData) =>
+            {
+                CXSourceLocation cxSourceLocation = clang.getCursorLocation(cur);
+                if (cxSourceLocation.IsFromMainFile == false)
+                {
+                    return CXChildVisitResult.CXChildVisit_Continue;
+                }
+                if (cur.kind == CXCursorKind.CXCursor_ClassDecl)
+                {
+                    ReflectedClass reflectedClass = pg.GetReflectedClass(cur, attributeMap);
+                    if (reflectedClass != null)
+                    {
+                        result = reflectedClass;
+                    }
+                    var handle = GCHandle.Alloc(reflectedClass);
+                    try
+                    {
+                        trans.GetInclusions(new CXInclusionVisitor(InclusionVisitor), new CXClientData(GCHandle.ToIntPtr(handle)));
+
+                    }
+                    finally
+                    {
+                        handle.Free();
+                    }
+                }
+                return CXChildVisitResult.CXChildVisit_Recurse;
+
+            }, new CXClientData());
+            return result;
+        }
+        private unsafe ReflectedClass GetReflectedClass(CXCursor classCursor,Dictionary<string,List<string>> attributeMap)
         {
             // クラスの情報取得
             ReflectedClass reflectedClass = new ReflectedClass()
@@ -176,7 +235,6 @@ namespace ClangTest
             {
                 if (child.Kind == CXCursorKind.CXCursor_FieldDecl)
                 {
-                    hasReflectAttribute(child);
                     string name = clang.getCursorSpelling(child).ToString();
                     string type = clang.getTypeSpelling(clang.getCursorType(child)).ToString();
                     CX_CXXAccessSpecifier access = clang.getCXXAccessSpecifier(child);
@@ -375,11 +433,7 @@ namespace ClangTest
             }
             return "";
         }
-        bool hasReflectAttribute(CXCursor cursor)
-        {
-
-            return true;
-        }
+       
         static Dictionary<string, List<string>> ExtractAttributesFromSource(string sourceFilePath)
         {
             string sourceCode = File.ReadAllText(sourceFilePath);
