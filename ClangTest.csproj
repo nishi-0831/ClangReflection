@@ -18,6 +18,7 @@
     <PackageReference Include="ClangSharp.Interop" Version="20.1.2.4" />
     <PackageReference Include="libClangSharp" Version="20.1.2" />
     <PackageReference Include="libClangSharp.runtime.win-x64" Version="20.1.2" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageReference Include="Scriban" Version="6.5.2" />
   </ItemGroup>
 
