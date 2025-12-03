@@ -6,7 +6,7 @@ struct {{ class_name }}DTO
 {
 {{- for member in properties }}
 	{{ member.type_name }} {{ member.name }};
-{{- endfor }}
+{{- end }}
 };
 
 // マクロ展開部分... 
@@ -19,7 +19,7 @@ struct {{ class_name }}DTO
 		{{ class_name }}DTO dto; \
 {{- for member in properties }}
 		dto.{{ member.name }} = this->{{ member.name }}; \
-{{- endfor }}
+{{- end }}
 		return new ComponentMemento<{{ class_name }}, {{ class_name }}DTO>(GetEntityId(), dto); \
 	} \
 	\
@@ -28,14 +28,14 @@ struct {{ class_name }}DTO
 		const {{ class_name }}DTO& dto = _memento.GetDTO(); \
 {{- for member in properties }}
 		this->{{ member.name }} = dto.{{ member.name }}; \
-{{- endfor }}
+{{- end }}
 		OnPostRestore(); \
 	} \
 	\
 	friend struct {{ class_name }}_Register;
 
 // JSONシリアライズ定義
-NLOHMANN_DEFINE_TYPE_INTRUSIVE({{ class_name }}, {{ properties | map "name" | join ", " }})
+NLOHMANN_DEFINE_TYPE_INTRUSIVE({{ class_name }}, {{ properties | array.map "name" | array.join ", " }})
 
 // Memento型定義
 using {{ class_name }}Memento = ComponentMemento<{{ class_name }}, {{ class_name }}DTO>;
@@ -49,12 +49,12 @@ struct {{ class_name }}_Register
 		{
 {{- for member in properties }}
 			TypeRegistry::Instance().CallFunc(&_target->{{ member.name }}, "{{ member.name }}");
-{{- endfor }}
+{{- end }}
 		});
 	}
 };
 
-static {{ class_name }}_Register {{ class_name | downcase }}_register;
+static {{ class_name }}_Register {{ class_name | string.downcase }}_register;
 
 // マクロ上書き
 #define MT_GENERATED_BODY() MT_GENERATED_BODY_{{ class_name }}()

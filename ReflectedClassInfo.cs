@@ -15,7 +15,7 @@ namespace ClangTest
         public List<string> Attributes { get; set; } = new();
     }
 
-    class ReflectedClass
+    class ReflectedClassInfo
     {
         public string ClassName { get; set; } = "";
         public string NameSpace { get; set; } = "";
