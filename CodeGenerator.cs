@@ -10,14 +10,15 @@ using System.CodeDom.Compiler;
 namespace ClangTest
 {
     
-    class CodeGenerator
+    public class CodeGenerator
     {
         private string projectRoot = "";
         private AnalysisCache cache;
         private ReflectionParser reflectionParser;
 
-        CodeGenerator()
+        public CodeGenerator()
         {
+            
             // プロジェクトのディレクトリが書かれたファイルを読み取る
             if (File.Exists("ProjectDirPath.txt"))
             {
@@ -30,7 +31,8 @@ namespace ClangTest
             else
             {
                 // ファイルがなければ終了させる
-                throw new FileNotFoundException("ProjectDirPath.txt が見つかりません。");
+                string currentDir = Directory.GetCurrentDirectory();
+                throw new FileNotFoundException($"ProjectDirPath.txt が見つかりません。探索ディレクトリ:{currentDir}");
             }
 
             // ファイルのハッシュ値を分析するクラス
@@ -41,7 +43,7 @@ namespace ClangTest
             // ハッシュ値のキャッシュを読み取る
             cache.LoadCache();
         }
-        void Run()
+        public void Run()
         {
             // ヘッダファイルの数、生成をスキップした数、生成した数。コンソールに表示する
             int headerCount = 0, skipped = 0, regenerated = 0;
@@ -55,8 +57,12 @@ namespace ClangTest
             foreach (var headerFile in headerFiles)
             {
                 // ファイルが存在するか
-                if (File.Exists(headerFile))
+                if (File.Exists(headerFile) == false)
+                {
+                    Console.WriteLine($"{headerFile}が見つかりません");
+                    skipped++;
                     continue;
+                }
 
                 // 生成する必要があるか
                 if(cache.NeedsRegeneration(headerFile))
@@ -64,9 +70,15 @@ namespace ClangTest
                     ReflectedClassInfo? reflectedClass = null;
                     // ヘッダファイルを解析し、クラスの情報を取得
                     if (reflectionParser.TryParse(headerFile, out reflectedClass) == false)
+                    {
+                        skipped++;
                         continue;
+                    }
                     if (reflectedClass == null)
+                    {
+                        skipped++;
                         continue;
+                    }
 
                     // ファイルを生成
                     Generate(reflectedClass);
@@ -89,7 +101,7 @@ namespace ClangTest
             Console.WriteLine();
             Console.WriteLine($"Result:headerCount,{headerCount} regenerated,{regenerated} skipped,{skipped}");
         }
-        public void Generate(ReflectedClassInfo reflectedClass)
+        private void Generate(ReflectedClassInfo reflectedClass)
         {
             // MT_COMPONENT属性(マクロ)が付与されているクラスのみ生成対象とする
             if(reflectedClass.Attributes.Contains("MT_COMPONENT") == false)
@@ -97,13 +109,19 @@ namespace ClangTest
                 Console.WriteLine("Not Attribute MT_COMPONENT");
                 return;
             }
-
             string scribanFile = "GenerateComponentHeader.sbn";
-            // Sbn ディレクトリ内のファイルを探す
-            string reflectionDir = Path.Combine(projectRoot, "Sbn");
-            string sourcePath = Path.Combine(reflectionDir, scribanFile);
-
-            string headerTemplateText = File.ReadAllText(sourcePath);
+                        
+            // 実行ファイルと同じディレクトリ内を探す
+            string sourcePath = Path.Combine(AppContext.BaseDirectory, scribanFile);
+            string headerTemplateText="";
+            try
+            {
+                headerTemplateText = File.ReadAllText(sourcePath);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"ファイル書き込みエラー:{ex.GetType().Name},{ex.Message}");
+            }
             // 生成用のScribanファイルを解析
             Template headerTemplate = Template.Parse(headerTemplateText);
 
@@ -120,12 +138,19 @@ namespace ClangTest
                 })
                 .ToList()
             });
-            string fileName = $"{reflectedClass.ClassName}.h";
+            string fileName = $"{reflectedClass.ClassName}.generated.h";
 
             string filePath = Path.GetFullPath(Path.Combine(projectRoot, reflectedClass.Directory));
             string generatePath = Path.GetFullPath(Path.Combine(filePath, fileName));
-            
-            File.WriteAllText(generatePath, headerResult);
+            Console.WriteLine($"generate:{generatePath},fileName:{fileName}");
+            try
+            {
+                File.WriteAllText(generatePath, headerResult);
+            }
+            catch(Exception ex)
+            {
+                Console.WriteLine($"ファイル書き込みエラー:{ex.GetType().Name},{ex.Message}");
+            }
         }
     }
 }

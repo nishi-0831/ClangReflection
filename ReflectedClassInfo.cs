@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace ClangTest
 {
-    class ReflectedMember
+    public class ReflectedMember
     {
         public string Name { get; set; } = "";
         public string TypeName { get; set; } = "";
@@ -15,7 +15,7 @@ namespace ClangTest
         public List<string> Attributes { get; set; } = new();
     }
 
-    class ReflectedClassInfo
+    public class ReflectedClassInfo
     {
         public string ClassName { get; set; } = "";
         public string NameSpace { get; set; } = "";

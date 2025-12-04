@@ -8,10 +8,27 @@ class Program
 {
     static int Main(string[] args)
     {
-        //if (args.Length < 0)
-        //{
-        //    Console.WriteLine("");
-        //}
-        return 1;
+        if (args.Length < 1)
+        {
+            Console.WriteLine("fatal");
+            return 1;
+        }
+
+        string projectRoot = args[0];
+
+        try
+        {
+
+            CodeGenerator codeGenerator = new CodeGenerator();
+            codeGenerator.Run();
+            Console.WriteLine($"Generate: success");
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"fatal: {ex.Message}");
+            return 1;
+        }
+    }
 }
 
