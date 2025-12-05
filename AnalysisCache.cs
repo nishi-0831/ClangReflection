@@ -63,7 +63,7 @@ namespace ClangTest
         public bool NeedsRegeneration(string sourceFile)
         {
             var currentHash = ComputeFileHash(sourceFile);
-            if(cachedHashes.TryGetValue(sourceFile,out var cachedHash))
+            if(cachedHashes.TryGetValue(sourceFile,out var cachedHash) == false)
             {
                 // キャッシュにない。初回、もしくは削除済み
                 return true;

@@ -142,7 +142,7 @@ namespace ClangTest
 
             string filePath = Path.GetFullPath(Path.Combine(projectRoot, reflectedClass.Directory));
             string generatePath = Path.GetFullPath(Path.Combine(filePath, fileName));
-            Console.WriteLine($"generate:{generatePath},fileName:{fileName}");
+            Console.WriteLine($"generate:{generatePath}");
             try
             {
                 File.WriteAllText(generatePath, headerResult);
