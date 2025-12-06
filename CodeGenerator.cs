@@ -7,13 +7,14 @@ using Scriban;
 using System.IO;
 using ClangTest;
 using System.CodeDom.Compiler;
+using System.Runtime.CompilerServices;
 namespace ClangTest
 {
     
     public class CodeGenerator
     {
         private string projectRoot = "";
-        private AnalysisCache cache;
+        private ParallelAnalysisCache cache;
         private ReflectionParser reflectionParser;
 
         public CodeGenerator()
@@ -35,71 +36,73 @@ namespace ClangTest
                 throw new FileNotFoundException($"ProjectDirPath.txt が見つかりません。探索ディレクトリ:{currentDir}");
             }
 
+            string cacheFile = ".analysis_cache.json";
             // ファイルのハッシュ値を分析するクラス
-            this.cache = new AnalysisCache();
+            this.cache = new ParallelAnalysisCache(cacheFile);
             // ファイルのリフレクション情報を解析するクラス
             this.reflectionParser = new ReflectionParser();
-
-            // ハッシュ値のキャッシュを読み取る
-            cache.LoadCache();
         }
         public void Run()
         {
             // ヘッダファイルの数、生成をスキップした数、生成した数。コンソールに表示する
-            int headerCount = 0, skipped = 0, regenerated = 0;
+            int headerCount = 0, skipped = 0, regenerated = 0, failureCount = 0;
 
             // ファイルを取得
             var headerFiles = Directory.GetFiles(projectRoot, "*.h", SearchOption.AllDirectories).ToList();
 
+            // 再生成対象のファイルを取得
+            var filesToRegenerate = cache.FindFilesNeedingRegeneration(headerFiles);
+
+            if(filesToRegenerate.Count == 0)
+            {
+                Console.WriteLine("[Gen] All files up-to-date. No regeneration needed.");
+                cache.SaveCacheToDisk();
+                return;
+            }
+
+            Console.WriteLine($"[Gen] Regenerating {filesToRegenerate.Count} files...");
+            System.Diagnostics.Stopwatch stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            
             // ヘッダファイルの数をカウント
             headerCount = headerFiles.Count;
 
-            foreach (var headerFile in headerFiles)
+            foreach(string headerFile in filesToRegenerate)
             {
-                // ファイルが存在するか
-                if (File.Exists(headerFile) == false)
+                try
                 {
-                    Console.WriteLine($"{headerFile}が見つかりません");
-                    skipped++;
-                    continue;
-                }
+                    string relative = Path.GetRelativePath(projectRoot, headerFile);
+                    Console.WriteLine($"[Gen] {relative}");
 
-                // 生成する必要があるか
-                if(cache.NeedsRegeneration(headerFile))
-                {
-                    ReflectedClassInfo? reflectedClass = null;
-                    // ヘッダファイルを解析し、クラスの情報を取得
-                    if (reflectionParser.TryParse(headerFile, out reflectedClass) == false)
+                    bool succeeded = reflectionParser.TryParse(headerFile, out ReflectedClassInfo? reflectedClass);
+
+                    if (succeeded && reflectedClass != null)
+                    {
+                        Generate(reflectedClass);
+                        regenerated++;
+                    }
+                    else
                     {
                         skipped++;
-                        continue;
                     }
-                    if (reflectedClass == null)
-                    {
-                        skipped++;
-                        continue;
-                    }
-
-                    // ファイルを生成
-                    Generate(reflectedClass);
-                    // ファイルを更新したのでキャッシュを更新
                     cache.UpdateCache(headerFile);
-                    // 生成数をカウント
-                    regenerated++;
                 }
-                else
+                catch (Exception ex)
                 {
-                    // スキップ数をカウント
-                    skipped++;
+                    Console.Error.WriteLine($"[Error] {Path.GetFileName(headerFile)}: {ex.Message}");
+                    failureCount++;
                 }
             }
+
+            stopwatch.Stop();
+
             // キャッシュを保存
-            cache.SaveCache();
+            cache.SaveCacheToDisk();
             
 
             // 結果を表示
             Console.WriteLine();
-            Console.WriteLine($"Result:headerCount,{headerCount} regenerated,{regenerated} skipped,{skipped}");
+            Console.WriteLine($"[Gen] Complete in {stopwatch.ElapsedMilliseconds} ms");
+            Console.WriteLine($"[Gen] Regenerated: {regenerated}, Skipped: {skipped}, Failure: {failureCount}");
         }
         private void Generate(ReflectedClassInfo reflectedClass)
         {
@@ -139,7 +142,6 @@ namespace ClangTest
                 .ToList()
             });
             string fileName = $"{reflectedClass.ClassName}.generated.h";
-
             string filePath = Path.GetFullPath(Path.Combine(projectRoot, reflectedClass.Directory));
             string generatePath = Path.GetFullPath(Path.Combine(filePath, fileName));
             Console.WriteLine($"generate:{generatePath}");

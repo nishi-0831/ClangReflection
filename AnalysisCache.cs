@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Security.Cryptography;
+using System.IO.Hashing;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Newtonsoft.Json;
@@ -16,15 +17,14 @@ namespace ClangTest
 
         /// <summary>
         /// ハッシュ値を計算し、返す
-        /// SHA256で計算を行う
+        /// xxHash64で計算を行う
         /// </summary>
         /// <param name="filePath">ハッシュ値を計算するファイル</param>
         /// <returns>ハッシュ値</returns>
         string ComputeFileHash(string filePath)
         {
-            using var sha256 = SHA256.Create();
+            var sha256 = SHA256.Create();
             using var file = File.OpenRead(filePath);
-            
             var hash = sha256.ComputeHash(file);
             return Convert.ToHexString(hash);
         }

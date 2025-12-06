@@ -18,7 +18,6 @@ class Program
 
         try
         {
-
             CodeGenerator codeGenerator = new CodeGenerator();
             codeGenerator.Run();
             Console.WriteLine($"Generate: success");
