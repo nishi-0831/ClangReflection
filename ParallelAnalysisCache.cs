@@ -28,7 +28,7 @@ namespace ClangTest
         }
 
         /// <summary>
-        /// キャッシュを読み込む
+        /// キャッシュをファイルから読み込む
         /// </summary>
         private void LoadCacheFromDisk()
         {
@@ -52,6 +52,9 @@ namespace ClangTest
             }
         }
 
+        /// <summary>
+        /// キャッシュをファイルに保存する
+        /// </summary>
         public void SaveCacheToDisk()
         {
             lock (lockObj)
@@ -111,6 +114,12 @@ namespace ClangTest
 
         }
 
+        /// <summary>
+        /// ファイルを再生成する必要があるか否か
+        /// ハッシュを比較する
+        /// </summary>
+        /// <param name="filePath">再生成の要否を調べるファイルのパス</param>
+        /// <returns>再生成する必要がある場合はtrue、ない場合はfalseを返す</returns>
         public bool FileNeedsRegeneration(string filePath)
         {
             if (File.Exists(filePath) == false)
@@ -154,8 +163,8 @@ namespace ClangTest
         /// 生成対象となるファイルか否か
         /// 例えば生成されたファイルなど、キャッシュする必要もないファイルか判定
         /// </summary>
-        /// <param name="filePath"></param>
-        /// <returns></returns>
+        /// <param name="filePath">判定するファイルのパス</param>
+        /// <returns>生成対象ではない場合はtrue、生成対象の場合はfalse</returns>
         private bool ShouldSkip(string filePath)
         {
             var name = Path.GetFileName(filePath);

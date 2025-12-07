@@ -10,11 +10,12 @@ namespace ClangTest
 {
     public class XxHashComputer
     {
-        // 1MBのバッファ
-        private const int BUFFER_SIZE = 1024 * 1024;
+        // 32KBのバッファ
+        private const int BUFFER_SIZE = 32768;
 
         public static string ComputeHash(string filePath)
         {
+            // 64ビットのハッシュ値を出力するよう指定
             var hashAlgorithm = xxHashFactory.Instance.Create(new xxHashConfig { HashSizeInBits = 64 });
             // 既存のファイルを開く、読み取り専用としてアクセス、他プロセスからのアクセスも読み取りのみ許可
             using var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, BUFFER_SIZE);

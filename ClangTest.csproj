@@ -10,7 +10,23 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="BenchmarkSuite1\**" />
+    <EmbeddedResource Remove="BenchmarkSuite1\**" />
+    <None Remove="BenchmarkSuite1\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="HeaderDiscoveryStrategies.cs" />
+    <Compile Remove="HeaderDiscoveryUsageExample.cs" />
+    <Compile Remove="ReflectionParserApproach3Complete.cs" />
+    <Compile Remove="ReflectionParserImproved.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Remove="APPROACH_COMPARISON.md" />
     <None Remove="Generated\Sample1.h" />
+    <None Remove="IMPLEMENTATION_SUMMARY.md" />
+    <None Remove="README_HEADER_DISCOVERY.md" />
   </ItemGroup>
 
   <ItemGroup>
@@ -24,6 +40,7 @@
     <PackageReference Include="System.Data.HashFunction.Interfaces" Version="2.0.0" />
     <PackageReference Include="System.Data.HashFunction.xxHash" Version="2.0.0" />
     <PackageReference Include="System.IO.Hashing" Version="10.0.0" />
+    <PackageReference Include="System.Text.Encoding.CodePages" Version="10.0.0" />
   </ItemGroup>
 
   <Target Name="PreBuild" BeforeTargets="PreBuildEvent">

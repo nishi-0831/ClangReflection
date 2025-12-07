@@ -20,7 +20,7 @@ namespace ClangTest
         public string ClassName { get; set; } = "";
         public string NameSpace { get; set; } = "";
         public List<ReflectedMember> Members { get; set; } = new();
-        public List<string> HeaderFile { get; set; } = new();
+        public string HeaderFile { get; set; } = "";
         public string Directory { get; set; } = "";
         public List<string> Attributes { get; set; } = new();
 

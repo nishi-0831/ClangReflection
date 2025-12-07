@@ -14,7 +14,7 @@ struct {{ class_name }}DTO
 	public: \
 	using DTO = {{ class_name }}DTO; \
 	\
-	IMemento* SaveToMemento() \
+	IComponentMemento* SaveToMemento() \
 	{ \
 		{{ class_name }}DTO dto; \
 {{- for member in properties }}
@@ -32,11 +32,16 @@ struct {{ class_name }}DTO
 		OnPostRestore(); \
 	} \
 	\
-	friend struct {{ class_name }}_Register;
+	friend struct {{ class_name }}_Register;\
+	NLOHMANN_DEFINE_TYPE_INTRUSIVE({{ class_name }}, {{ properties | array.map "name" | array.join ", " }})
 
-// JSONシリアライズ定義
-NLOHMANN_DEFINE_TYPE_INTRUSIVE({{ class_name }}, {{ properties | array.map "name" | array.join ", " }})
 
+namespace mtgb
+{
+	class {{class_name}};
+	template<typename TComponent,typename TState>
+	class ComponentMemento;
+}
 // Memento型定義
 using {{ class_name }}Memento = ComponentMemento<{{ class_name }}, {{ class_name }}DTO>;
 

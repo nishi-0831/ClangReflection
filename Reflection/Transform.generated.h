@@ -4,7 +4,8 @@
 // DTO構造体
 struct TransformDTO
 {
-	float position_;
+	int position_;
+	Hoge hoge_;
 };
 
 // マクロ展開部分... 
@@ -16,6 +17,7 @@ struct TransformDTO
 	{ \
 		TransformDTO dto; \
 		dto.position_ = this->position_; \
+		dto.hoge_ = this->hoge_; \
 		return new ComponentMemento<Transform, TransformDTO>(GetEntityId(), dto); \
 	} \
 	\
@@ -23,13 +25,14 @@ struct TransformDTO
 	{ \
 		const TransformDTO& dto = _memento.GetDTO(); \
 		this->position_ = dto.position_; \
+		this->hoge_ = dto.hoge_; \
 		OnPostRestore(); \
 	} \
 	\
 	friend struct Transform_Register;
 
 // JSONシリアライズ定義
-NLOHMANN_DEFINE_TYPE_INTRUSIVE(Transform, position_)
+NLOHMANN_DEFINE_TYPE_INTRUSIVE(Transform, position_, hoge_)
 
 // Memento型定義
 using TransformMemento = ComponentMemento<Transform, TransformDTO>;
@@ -42,6 +45,7 @@ struct Transform_Register
 		RegisterShowFuncHolder::Set<Transform>([](Transform* _target, const char* _name)
 		{
 			TypeRegistry::Instance().CallFunc(&_target->position_, "position_");
+			TypeRegistry::Instance().CallFunc(&_target->hoge_, "hoge_");
 		});
 	}
 };

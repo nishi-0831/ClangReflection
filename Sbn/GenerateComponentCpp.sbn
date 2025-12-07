@@ -1,0 +1,20 @@
+// {{ class_name }}.generated.cpp
+# include "{{ class_name }}.generated.h"
+# include {{ header_file }}
+# include "TypeRegistry.h"
+
+namespace mtgb
+{
+	// ImGui•\¦ˆ—‚ğ“o˜^
+	{{ class_name }}_Register()
+	{
+		RegisterShowFuncHolder::Set<{{ class_name }}>([]( {{ class_name }}* _target, const char* _name)
+			{
+				{{- for member in properties }}
+							TypeRegistry::Instance().CallFunc(&_target->{{ member.name }}, "{{ member.name }}");
+				{{- end }}
+			});
+	}
+
+	static {{ class_name }}_Register {{ class_name | string.downcase }}_register
+}
