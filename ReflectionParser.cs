@@ -40,16 +40,8 @@ namespace ClangTest
         protected List<string> _namespace = new List<string>();
         protected String _namespaceStr = "";
         protected static string projectDir = "";
-
-        
-        /// <summary>
-        /// ファイルを解析し、結果を第二引数,reflectedClassに書き込む
-        /// C++20のヘッダファイルを解析する
-        /// </summary>
-        /// <param name="filePath"></param>
-        /// <param name="reflectedClass"></param>
-        /// <returns>解析に成功した場合はtrue、失敗した場合、ファイルが見つからなかった場合はfalseを返す</returns>
-        public unsafe bool TryParse(string filePath,out ReflectedClassInfo? reflectedClass)
+        private static readonly object parseLock = new();
+        public unsafe bool TryParse(string filePath, out ReflectedClassInfo? reflectedClass)
         {
             reflectedClass = null;
 
@@ -59,6 +51,22 @@ namespace ClangTest
                 Console.WriteLine($"ファイルが見つかりません: {filePath}");
                 return false;
             }
+
+            lock (parseLock)
+            {
+                return TryParseImpl(filePath, out reflectedClass);
+            }
+        }
+        /// <summary>
+        /// ファイルを解析し、結果を第二引数,reflectedClassに書き込む
+        /// C++20のヘッダファイルを解析する
+        /// </summary>
+        /// <param name="filePath"></param>
+        /// <param name="reflectedClass"></param>
+        /// <returns>解析に成功した場合はtrue、失敗した場合、ファイルが見つからなかった場合はfalseを返す</returns>
+        private unsafe bool TryParseImpl(string filePath,out ReflectedClassInfo? reflectedClass)
+        {
+            reflectedClass = null;
 
             // ソースから属性を抽出
             Dictionary<string, List<string>> attributeMap = ExtractAttributesFromSource(filePath);
@@ -73,7 +81,7 @@ namespace ClangTest
             var trans = new CXTranslationUnit();
             // エラーコードを受け取り、失敗なら表示する（TryParse を使う）
             var err = CXTranslationUnit.TryParse(index, filePath, args, Array.Empty<CXUnsavedFile>(),
-                CXTranslationUnit_Flags.CXTranslationUnit_DetailedPreprocessingRecord, out trans);
+                CXTranslationUnit_Flags.CXTranslationUnit_SkipFunctionBodies, out trans);
 
             if (err != CXErrorCode.CXError_Success)
             {
@@ -374,7 +382,23 @@ namespace ClangTest
             // いずれにも該当しなかった
             return "";
         }
-       
+
+        private static readonly Regex MemberRegex = new(
+             $@"(MT_PROPERTY|MT_FUNCTION)\s*\(\s*\)\s*" +
+                @"(?:(?:\s*//[^\r\n]*|\s*/\*[\s\S]*?\*/|\s+))*" +   // コメント/空白を0回以上許可
+                @"(?:(?:const|volatile|static|mutable|virtual)\s+)*" +
+                @"(?:[\w:<>,\s&*\[\]]+?)\s+" +                     // 型(配列や<>含む)
+                @"(\w+)\s*[;=]",
+             RegexOptions.Multiline | RegexOptions.Singleline | RegexOptions.Compiled);
+
+        private static readonly Regex ClassRegex = new
+            ($@"(MT_COMPONENT)\s*\(\s*\)" +
+                @"(?:\s*//.*?|" + // C++の単一行コメント
+                @"\s*/\*.*?\*/|" + // C++のブロックコメント
+                @"\s+)*" +         // 空白文字
+                @"class\s+(\w+)",
+            RegexOptions.Multiline | RegexOptions.Singleline | RegexOptions.Compiled);
+
         /// <summary>
         /// ファイルから、識別子(変数、関数、クラス)に付与された属性を抽出する
         /// </summary>
@@ -392,24 +416,8 @@ namespace ClangTest
 
             // TODO:属性をハードコーディングするのでなく、外部ファイルから読み取るなど別の方法を採るべき
 
-            // メンバ用(変数、関数)
-            string memberPattern = $@"(MT_PROPERTY|MT_FUNCTION)\s*\(\s*\)\s*" +
-                @"(?:(?:\s*//[^\r\n]*|\s*/\*[\s\S]*?\*/|\s+))*" +   // コメント/空白を0回以上許可
-                @"(?:(?:const|volatile|static|mutable|virtual)\s+)*" +
-                @"(?:[\w:<>,\s&*\[\]]+?)\s+" +                     // 型(配列や<>含む)
-                @"(\w+)\s*[;=]";
-
-            // クラス・構造体用
-            string classPattern = $@"(MT_COMPONENT)\s*\(\s*\)" +
-                @"(?:\s*//.*?|"  + // C++の単一行コメント
-                @"\s*/\*.*?\*/|" + // C++のブロックコメント
-                @"\s+)*" +         // 空白文字
-                @"class\s+(\w+)";
-
-
             // メンバを解析
-            MatchCollection memberMatch = Regex.Matches(sourceCode, memberPattern, RegexOptions.Multiline | RegexOptions.Singleline);
-            foreach (Match match in memberMatch)
+            foreach (Match match in MemberRegex.Matches(sourceCode))
             {
                 if (match.Groups.Count > 0)
                 {
@@ -426,8 +434,7 @@ namespace ClangTest
             }
 
             // クラス、構造体を解析
-            MatchCollection classMatch = Regex.Matches(sourceCode, classPattern, RegexOptions.Multiline | RegexOptions.Singleline);
-            foreach (Match match in classMatch)
+            foreach (Match match in ClassRegex.Matches(sourceCode))
             {
                 if(match.Groups.Count > 0)
                 {

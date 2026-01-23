@@ -1,65 +1,82 @@
 // {{ class_name }}.generated.h
 #pragma once
 
-// DTO構造体
-struct {{ class_name }}DTO
-{
-{{- for member in properties }}
-	{{ member.type_name }} {{ member.name }};
-{{- end }}
-};
+#include <nlohmann/json.hpp>
+#include "JsonConverter.h"
+#include "MTImGui.h"
+#include <string>
+// ============================================================================
+// {{ class_name }}の状態を保存するState構造体の定義、Undo/Redoに使うMementoのusing宣言
+// ============================================================================
+#define MT_COMPONENT_{{ class_name }}() \
+	struct {{ class_name }}State \
+	{ \
+		{{- for member in properties}}
+			{{member.type_name }} {{ member.name }}; \
+		{{- end }}
+	}; \
+	class {{ class_name }};\
+	using {{ class_name }}Memento = ComponentMemento<{{ class_name }}, {{ class_name }}State>;
 
-// マクロ展開部分... 
+// ============================================================================
+// {{ class_name }}と{{ class_name }}Mementoの相互変換処理を実装
+// ============================================================================
 #define MT_GENERATED_BODY_{{ class_name }}() \
 	public: \
-	using DTO = {{ class_name }}DTO; \
-	\
-	IComponentMemento* SaveToMemento() \
+	using Memento = {{ class_name }}Memento; \
+	{{ class_name }}Memento* SaveToMemento() \
 	{ \
-		{{ class_name }}DTO dto; \
+	OnPreSave(); \
+		{{ class_name }}State state; \
 {{- for member in properties }}
-		dto.{{ member.name }} = this->{{ member.name }}; \
+		state.{{ member.name }} = this->{{ member.name }}; \
 {{- end }}
-		return new ComponentMemento<{{ class_name }}, {{ class_name }}DTO>(GetEntityId(), dto); \
+		return new ComponentMemento<{{ class_name }}, {{ class_name }}State>(GetEntityId(), state); \
 	} \
 	\
-	void RestoreFromMemento(const ComponentMemento<{{ class_name }}, {{ class_name }}DTO>& _memento) \
+	void RestoreFromMemento(const ComponentMemento<{{ class_name }}, {{ class_name }}State>& _memento) \
 	{ \
-		const {{ class_name }}DTO& dto = _memento.GetDTO(); \
+		const {{ class_name }}State& state = _memento.GetState(); \
 {{- for member in properties }}
-		this->{{ member.name }} = dto.{{ member.name }}; \
+		this->{{ member.name }} = state.{{ member.name }}; \
 {{- end }}
 		OnPostRestore(); \
 	} \
 	\
-	friend struct {{ class_name }}_Register;\
-	NLOHMANN_DEFINE_TYPE_INTRUSIVE({{ class_name }}, {{ properties | array.map "name" | array.join ", " }})
-
-
-namespace mtgb
-{
-	class {{class_name}};
-	template<typename TComponent,typename TState>
-	class ComponentMemento;
-}
-// Memento型定義
-using {{ class_name }}Memento = ComponentMemento<{{ class_name }}, {{ class_name }}DTO>;
-
-// ImGui表示処理登録
-struct {{ class_name }}_Register
-{
-	{{ class_name }}_Register()
-	{
-		RegisterShowFuncHolder::Set<{{ class_name }}>([]({{ class_name }}* _target, const char* _name)
-		{
+	friend struct {{ class_name }}_Register; \
+	friend void to_json(nlohmann::json& _j,const {{ class_name }}& _target) \
+	{ \
 {{- for member in properties }}
-			TypeRegistry::Instance().CallFunc(&_target->{{ member.name }}, "{{ member.name }}");
+		_j["{{ member.name }}"] = JsonConverter::Serialize<{{ member.type_name }}>(_target.{{ member.name }}); \
 {{- end }}
-		});
+	} \
+	friend void from_json(const nlohmann::json& _j, {{ class_name }}& _target) \
+	{ \
+{{- for member in properties }}
+		JsonConverter::Deserialize<{{ member.type_name }}>(_target.{{ member.name }}, _j,"{{ member.name }}"); \
+{{- end }}
+		_target.OnPostRestore(); \
+	} \
+	static std::string TypeName(){ return "{{ class_name }}" ;} \
+	/* ImGui表示処理の登録 */ \
+	static void RegisterImGui() \
+	{ \
+		static bool registered = false; \
+		if (registered) return; \
+		registered = true; \
+		\
+		RegisterShowFuncHolder::Set<{{ class_name }}>([]( {{ class_name }}* _target, const char* _name) \
+			{ \
+{{- for member in properties }}
+				TypeRegistry::Instance().CallFunc(&_target->{{ member.name }}, "{{ member.name }}"); \
+{{- end }}
+			}); \
+		MTImGui::Instance().RegisterComponentViewer<{{ class_name }}>(); \
 	}
-};
 
-static {{ class_name }}_Register {{ class_name | string.downcase }}_register;
-
+#pragma warning(push)
+#pragma warning(disable:4005)
 // マクロ上書き
+#define MT_COMPONENT() MT_COMPONENT_{{ class_name }}()
 #define MT_GENERATED_BODY() MT_GENERATED_BODY_{{ class_name }}()
+#pragma warning(pop)

@@ -1,14 +1,17 @@
-﻿using System;
+﻿using ClangTest;
+using Scriban;
+using Scriban.Parsing;
+using System;
+using System.CodeDom.Compiler;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
-using Scriban;
-using System.IO;
-using ClangTest;
-using System.CodeDom.Compiler;
-using System.Runtime.CompilerServices;
-using Scriban.Parsing;
+using System.Threading.Tasks;
+
 namespace ClangTest
 {
 	
@@ -47,7 +50,8 @@ namespace ClangTest
 			// ファイルのリフレクション情報を解析するクラス
 			this.reflectionParser = new ReflectionParser();
 			// エンコーディングを取得
-            this.encoding = Encoding.Default;
+            //this.encoding = Encoding.Default;
+            this.encoding = new System.Text.UTF8Encoding(false,true);
             //this.encoding = Encoding.GetEncoding("shift_jis");
         }
 		public void ClearCache()
@@ -56,16 +60,23 @@ namespace ClangTest
 		}
         public void Run()
 		{
+			object lockObj = new();
+
 			// ヘッダファイルの数、生成をスキップした数、生成した数。コンソールに表示する
 			int headerCount = 0, skipped = 0, regenerated = 0, failureCount = 0;
 
 			// ファイルを取得
 			var headerFiles = Directory.GetFiles(projectRoot, "*.h", SearchOption.AllDirectories).ToList();
 
-			// 再生成対象のファイルを取得
-			var filesToRegenerate = cache.FindFilesNeedingRegeneration(headerFiles);
+            // 再生成対象のファイルを取得
+            ConcurrentBag<string> filesToRegenerate = new ConcurrentBag<string> ( cache.FindFilesNeedingRegeneration(headerFiles));
 
-			if(filesToRegenerate.Count == 0)
+			var parallelOptions = new ParallelOptions()
+			{ 
+				MaxDegreeOfParallelism = Environment.ProcessorCount
+			};
+
+			if (filesToRegenerate.Count == 0)
 			{
 				Console.WriteLine("[Gen] All files up-to-date. No regeneration needed.");
 				cache.SaveCacheToDisk();
@@ -77,39 +88,47 @@ namespace ClangTest
 			
 			// ヘッダファイルの数をカウント
 			headerCount = headerFiles.Count;
-
-			foreach(string headerFile in filesToRegenerate)
+			Parallel.ForEach(filesToRegenerate, parallelOptions, headerFile =>
 			{
 				try
 				{
 					string relative = Path.GetRelativePath(projectRoot, headerFile);
-					Console.WriteLine($"[Gen] {relative}");
+
 
 					bool succeeded = reflectionParser.TryParse(headerFile, out ReflectedClassInfo? reflectedClass);
-
 					if (succeeded && reflectedClass != null)
 					{
 						Generate(reflectedClass);
-						regenerated++;
 					}
-					else
+					lock (lockObj)
 					{
-						skipped++;
-					}
+						if(succeeded && reflectedClass != null)
+						{
+                            regenerated++;
+                            Console.WriteLine($"[Gen] {relative}");
+                        }
+                        else
+						{
+                            skipped++;
+                            Console.WriteLine($"[Skipped] {relative}");
+                        }
+                    }
 					cache.UpdateCache(headerFile);
 				}
 				catch (Exception ex)
 				{
-					Console.Error.WriteLine($"[Error] {Path.GetFileName(headerFile)}: {ex.Message}");
-					failureCount++;
+					lock (lockObj)
+					{
+                        Console.Error.WriteLine($"[Error] {Path.GetFileName(headerFile)}: {ex.Message}");
+                        failureCount++;
+                    }
 				}
-			}
+			});
 
 			stopwatch.Stop();
 
 			// キャッシュを保存
 			cache.SaveCacheToDisk();
-			
 
 			// 結果を表示
 			Console.WriteLine();
@@ -124,9 +143,8 @@ namespace ClangTest
 				Console.WriteLine("Not Attribute MT_COMPONENT");
 				return;
 			}
-			// ヘッダ、cppの生成
+			// ヘッダの生成
 			GenerateHeader(reflectedClass);
-			GenerateCpp(reflectedClass);
 		}
 		private void GenerateHeader(ReflectedClassInfo reflectedClass)
 		{

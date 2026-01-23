@@ -169,7 +169,7 @@ namespace ClangTest
         {
             var name = Path.GetFileName(filePath);
             // 生成されたファイルは生成対象でない
-            return name.Contains(". generated. h");
+            return name.Contains(".generated.h");
         }
 
         /// <summary>
