@@ -16,7 +16,7 @@ namespace ClangTest
 {
     class ReflectionParser
     {
-        public ReflectionParser() 
+        public ReflectionParser(string projDir) 
         {
             // 実行ファイルと同じディレクトリからdllを読み込む
             string? libclangPath = Path.Combine(AppContext.BaseDirectory, "libclang.dll");
@@ -25,16 +25,8 @@ namespace ClangTest
                 throw new Exception("libclang.dll not found!!!!!!");
             }
             NativeLibrary.Load(libclangPath);
+            projectDir = projDir.Trim();
             // プロジェクトのディレクトリを読み取る
-            if (File.Exists("ProjectDirPath.txt"))
-            {
-                using (StreamReader sr = new StreamReader("ProjectDirPath.txt"))
-                {
-                    // 改行や空白を除去
-                    projectDir = sr.ReadToEnd().Trim();
-                }
-            }
-
         }
 
         protected List<string> _namespace = new List<string>();
