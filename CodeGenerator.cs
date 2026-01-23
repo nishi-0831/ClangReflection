@@ -22,30 +22,14 @@ namespace ClangTest
 		{
 			return projectRoot;
 		}
-		public CodeGenerator()
+		public CodeGenerator(string projRoot)
 		{
-			
-			// プロジェクトのディレクトリが書かれたファイルを読み取る
-			if (File.Exists("ProjectDirPath.txt"))
-			{
-				using (StreamReader sr = new StreamReader("ProjectDirPath.txt"))
-				{
-					// 改行や空白を除去し、ディレクトリを取得
-					projectRoot = sr.ReadToEnd().Trim();
-				}
-			}
-			else
-			{
-				// ファイルがなければ終了させる
-				string currentDir = Directory.GetCurrentDirectory();
-				throw new FileNotFoundException($"ProjectDirPath.txt が見つかりません。探索ディレクトリ:{currentDir}");
-			}
-
+			projectRoot = projRoot.Trim();
 			string cacheFile = ".analysis_cache.json";
 			// ファイルのハッシュ値を分析するクラス
 			this.cache = new ParallelAnalysisCache(cacheFile);
 			// ファイルのリフレクション情報を解析するクラス
-			this.reflectionParser = new ReflectionParser();
+			this.reflectionParser = new ReflectionParser(projectRoot);
 			// エンコーディングを取得
             this.encoding = Encoding.Default;
             //this.encoding = Encoding.GetEncoding("shift_jis");

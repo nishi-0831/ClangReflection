@@ -12,7 +12,8 @@ class Program
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
         if (args.Length < 1)
         {
-            Console.WriteLine("fatal");
+            Console.WriteLine("fatal: Specify the project directory path as a command line argument");
+            Console.WriteLine("Usage: <exe> <ProjectDir> [--force]");
             return 1;
         }
 
@@ -31,7 +32,7 @@ class Program
         }
         try
         {
-            CodeGenerator codeGenerator = new CodeGenerator();
+            CodeGenerator codeGenerator = new CodeGenerator(projectRoot);
             if (forceRegenerate)
             {
                 Console.WriteLine($"Force Regenerate Header");
