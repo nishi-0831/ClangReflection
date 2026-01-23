@@ -78,7 +78,6 @@ namespace ClangTest
 				{
 					string relative = Path.GetRelativePath(projectRoot, headerFile);
 
-
 					bool succeeded = reflectionParser.TryParse(headerFile, out ReflectedClassInfo? reflectedClass);
 					if (succeeded && reflectedClass != null)
 					{

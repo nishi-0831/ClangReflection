@@ -68,54 +68,61 @@ namespace ClangTest
 
             // C++20のヘッダファイルを読みこむ
             var args = new[] { "-std=c++20", $"-I{directory}", "-x", "c++-header", "-fsyntax-only" };
-
-            var index = CXIndex.Create();
-            var trans = new CXTranslationUnit();
-            // エラーコードを受け取り、失敗なら表示する（TryParse を使う）
-            var err = CXTranslationUnit.TryParse(index, filePath, args, Array.Empty<CXUnsavedFile>(),
-                CXTranslationUnit_Flags.CXTranslationUnit_SkipFunctionBodies, out trans);
-
-            if (err != CXErrorCode.CXError_Success)
+            using (CXIndex index = CXIndex.Create())
             {
-                // 解析失敗
-                Console.WriteLine($"TryParse failed: {err}");
-                return false;
+                CXTranslationUnit trans = new CXTranslationUnit();
+                try
+                {
+                    // エラーコードを受け取り、失敗なら表示する（TryParse を使う）
+                    var err = CXTranslationUnit.TryParse(index, filePath, args, Array.Empty<CXUnsavedFile>(),
+                        CXTranslationUnit_Flags.CXTranslationUnit_SkipFunctionBodies, out trans);
+
+                    if (err != CXErrorCode.CXError_Success)
+                    {
+                        // 解析失敗
+                        Console.WriteLine($"TryParse failed: {err}");
+                        return false;
+                    }
+
+                    CXCursor cursor = trans.Cursor;
+
+                    // outパラメータはラムダ式内で使用できないのでローカル変数を用意
+                    ReflectedClassInfo? localReflectedClass = null;
+                    cursor.VisitChildren((cur, parent, clientData) =>
+                    {
+                        CXSourceLocation cxSourceLocation = clang.getCursorLocation(cur);
+                        if (cxSourceLocation.IsFromMainFile == false)
+                        {
+                            return CXChildVisitResult.CXChildVisit_Continue;
+                        }
+                        if (cur.kind == CXCursorKind.CXCursor_ClassDecl)
+                        {
+                            localReflectedClass = GetReflectedClass(cur, attributeMap);
+
+                            // GC対象から外す
+                            var handle = GCHandle.Alloc(localReflectedClass);
+                            try
+                            {
+                                // visitorにreflectedClassのポインタを渡す
+                                trans.GetInclusions(new CXInclusionVisitor(InclusionVisitor), new CXClientData(GCHandle.ToIntPtr(handle)));
+
+                            }
+                            finally
+                            {
+                                handle.Free();
+                            }
+                        }
+                        return CXChildVisitResult.CXChildVisit_Recurse;
+
+                    }, new CXClientData());
+                    // 解析結果を代入
+                    reflectedClass = localReflectedClass;
+                }
+                finally
+                {
+                    trans.Dispose();
+                }
             }
-
-            CXCursor cursor = trans.Cursor;
-
-            // outパラメータはラムダ式内で使用できないのでローカル変数を用意
-            ReflectedClassInfo? localReflectedClass = null;
-            cursor.VisitChildren((cur, parent, clientData) =>
-            {
-                CXSourceLocation cxSourceLocation = clang.getCursorLocation(cur);
-                if (cxSourceLocation.IsFromMainFile == false)
-                {
-                    return CXChildVisitResult.CXChildVisit_Continue;
-                }
-                if (cur.kind == CXCursorKind.CXCursor_ClassDecl)
-                {
-                    localReflectedClass = GetReflectedClass(cur, attributeMap);
-                    
-                    // GC対象から外す
-                    var handle = GCHandle.Alloc(localReflectedClass);
-                    try
-                    {
-                        // visitorにreflectedClassのポインタを渡す
-                        trans.GetInclusions(new CXInclusionVisitor(InclusionVisitor), new CXClientData(GCHandle.ToIntPtr(handle)));
-
-                    }
-                    finally
-                    {
-                        handle.Free();
-                    }
-                }
-                return CXChildVisitResult.CXChildVisit_Recurse;
-
-            }, new CXClientData());
-
-            // 解析結果を代入
-            reflectedClass = localReflectedClass;
             return reflectedClass != null;
         }
         private unsafe ReflectedClassInfo GetReflectedClass(CXCursor classCursor,Dictionary<string,List<string>> attributeMap)
