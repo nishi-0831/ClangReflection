@@ -12,8 +12,8 @@ class Program
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
         if (args.Length < 1)
         {
-            Console.WriteLine("fatal: Specify the project directory path as a command line argument");
-            Console.WriteLine("Usage: <exe> <ProjectDir> [--force]");
+            Console.Error.WriteLine("fatal: Specify the project directory path as a command line argument");
+            Console.Error.WriteLine("Usage: <exe> <ProjectDir> [--force]");
             return 1;
         }
 
@@ -32,7 +32,10 @@ class Program
         }
         try
         {
-            CodeGenerator codeGenerator = new CodeGenerator(projectRoot);
+            // 設定を読み込む
+            AnalysisConfig config = AnalysisConfig.LoadFromProjectRoot(projectRoot);
+
+            CodeGenerator codeGenerator = new CodeGenerator(projectRoot,config);
             if (forceRegenerate)
             {
                 Console.WriteLine($"Force Regenerate Header");

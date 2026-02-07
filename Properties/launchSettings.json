@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "ClangTest": {
+      "commandName": "Project",
+      "commandLineArgs": "C:\\Users\\nishi\\source\\repos\\Platformer3DGame\r\n--force"
+    }
+  }
+}

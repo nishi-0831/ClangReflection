@@ -1,0 +1,6 @@
+ExcludeDirectories:
+  - "EffekseeLib"
+  - "vcpkg_installed"
+  - "ImGui" 
+  - "packages" 
+MaxDegreeOfParallelism: 4
