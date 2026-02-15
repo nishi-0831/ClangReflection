@@ -12,8 +12,8 @@ namespace ClangTest
 {
     class AnalysisCache
     {
-        private Dictionary<string, string> cachedHashes = new();
-        private const string CACHE_FILE = ".analysis_cache.json";
+        private Dictionary<string, string> _cachedHashes = new();
+        private const string CacheFile = ".analysis_cache.json";
 
         /// <summary>
         /// ハッシュ値を計算し、返す
@@ -34,10 +34,10 @@ namespace ClangTest
         /// </summary>
         public void LoadCache()
         {
-            if(File.Exists(CACHE_FILE))
+            if(File.Exists(CacheFile))
             {
-                string json = File.ReadAllText(CACHE_FILE);
-                cachedHashes = JsonConvert.DeserializeObject < Dictionary<string, string> >(json) ?? new();
+                string json = File.ReadAllText(CacheFile);
+                _cachedHashes = JsonConvert.DeserializeObject < Dictionary<string, string> >(json) ?? new();
             }
             else
             {
@@ -51,8 +51,8 @@ namespace ClangTest
         /// </summary>
         public void SaveCache()
         {
-            string json = JsonConvert.SerializeObject(cachedHashes, Formatting.Indented);
-            File.WriteAllText(CACHE_FILE, json);
+            string json = JsonConvert.SerializeObject(_cachedHashes, Formatting.Indented);
+            File.WriteAllText(CacheFile, json);
         }
 
         /// <summary>
@@ -63,7 +63,7 @@ namespace ClangTest
         public bool NeedsRegeneration(string sourceFile)
         {
             var currentHash = ComputeFileHash(sourceFile);
-            if(cachedHashes.TryGetValue(sourceFile,out var cachedHash) == false)
+            if(_cachedHashes.TryGetValue(sourceFile,out var cachedHash) == false)
             {
                 // キャッシュにない。初回、もしくは削除済み
                 return true;
@@ -85,7 +85,7 @@ namespace ClangTest
         public void UpdateCache(string sourceFile)
         {
             var hash = ComputeFileHash(sourceFile);
-            cachedHashes[sourceFile] = hash;
+            _cachedHashes[sourceFile] = hash;
         }
     }
 }

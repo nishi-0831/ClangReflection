@@ -25,31 +25,31 @@ namespace ClangTest
             {
                 throw new Exception("libclang.dll not found!!!!!!");
             }
-            libclangHandle = NativeLibrary.Load(libclangPath);
-            projectDir = projDir.Trim();
+            _libclangHandle = NativeLibrary.Load(libclangPath);
+            _projectDir = projDir.Trim();
 
-            index = CXIndex.Create();
+            _index = CXIndex.Create();
 
             int parallelism = maxParallelism > 0 ? maxParallelism : Environment.ProcessorCount;
             // initialCount: 初期の解析数 , maxCount: 最大解析数
-            parseThrottle = new SemaphoreSlim(initialCount: parallelism, maxCount: parallelism);
+            _parseThrottle = new SemaphoreSlim(initialCount: parallelism, maxCount: parallelism);
         }
         ~ReflectionParser()
         {
             // GCはアンマネージド・リソースは解放してくれないので、Disposeを呼び出す
             Dispose(false);
         }
-        private bool disposed;
-        private IntPtr libclangHandle = IntPtr.Zero;
+        private bool _disposed;
+        private IntPtr _libclangHandle = IntPtr.Zero;
         // 翻訳単位を管理するやつ。解析の開始点となる
-        private readonly CXIndex index;
+        private readonly CXIndex _index;
         protected List<string> _namespace = new List<string>();
         protected String _namespaceStr = "";
-        protected static string projectDir = "";
-        private static readonly object parseLock = new();
+        protected static string _projectDir = "";
+        private static readonly object _parseLock = new();
 
         // 並列解析数を制限するクラス
-        private SemaphoreSlim parseThrottle;
+        private SemaphoreSlim _parseThrottle;
         public void Dispose()
         {
             Dispose(true);
@@ -57,46 +57,44 @@ namespace ClangTest
         }
         protected virtual void Dispose(bool disposing)
         {
-            if (disposed)
+            if (_disposed)
                 return;
 
             if(disposing)
             {
                 // マネージド(managed)・リソース解放処理をここで行う
-                parseThrottle?.Dispose();
+                _parseThrottle?.Dispose();
             }
 
             // アンマネージド(unmanaged)・リソースの解放処理
-            index.Dispose();
-            if(libclangHandle != IntPtr.Zero)
+            _index.Dispose();
+            if(_libclangHandle != IntPtr.Zero)
             {
-                NativeLibrary.Free(libclangHandle);
+                NativeLibrary.Free(_libclangHandle);
             }
-            libclangHandle = IntPtr.Zero;
+            _libclangHandle = IntPtr.Zero;
 
-            disposed = true;
+            _disposed = true;
         }
-        public unsafe bool TryParse(string filePath, out ReflectedClassInfo? reflectedClass)
+        public ReflectedClassInfo? Parse(string filePath)
         {
-            reflectedClass = null;
-
             // 絶対パスでファイルの存在を確認する
             if (!File.Exists(filePath))
             {
-                Console.WriteLine($"ファイルが見つかりません: {filePath}");
-                return false;
+                Console.Error.WriteLine($"{filePath} not found");
+                return null;
             }
 
             // 実行数を制限する
-            parseThrottle.Wait();
+            _parseThrottle.Wait();
             try
             {
-                return TryParseImpl(filePath, out reflectedClass);
+                return ParseImpl(filePath);
             }
             finally
             {
                 // 解析が終わったら解放して、使用可能にする
-                parseThrottle.Release(); 
+                _parseThrottle.Release(); 
             }
             
         }
@@ -107,39 +105,42 @@ namespace ClangTest
         /// <param name="filePath"></param>
         /// <param name="reflectedClass"></param>
         /// <returns>解析に成功した場合はtrue、失敗した場合、ファイルが見つからなかった場合はfalseを返す</returns>
-        private unsafe bool TryParseImpl(string filePath,out ReflectedClassInfo? reflectedClass)
-        {
-            reflectedClass = null;
+        private ReflectedClassInfo? ParseImpl(string filePath)
+        {            
             
-            // ディレクトリを取得
-            string directory = Path.GetDirectoryName(filePath) ?? "";
-
-            // C++20のヘッダファイルを読みこむ
-            var args = new[] { "-std=c++20", $"-I{directory}", "-x", "c++-header", "-fsyntax-only" };
-            using CXIndex index = CXIndex.Create();
-
             CXTranslationUnit trans = new CXTranslationUnit();
             try
             {
-                // エラーコードを受け取り、失敗なら表示する（TryParse を使う）
+                // ディレクトリを取得
+                string directory = Path.GetDirectoryName(filePath) ?? "";
+
+                // C++20のヘッダファイルを読みこむ
+                var args = new[] { "-std=c++20", $"-I{directory}", "-x", "c++-header", "-fsyntax-only" };
+                // excludeDeclarationsFromPch: PCHに含まれる宣言を解析対象から除外するかどうか。
+                using CXIndex index = CXIndex.Create(excludeDeclarationsFromPch: true);
+
+                // エラーコードを受け取り、失敗なら表示する（Parse を使う）
                 var err = CXTranslationUnit.TryParse(index, filePath, args, Array.Empty<CXUnsavedFile>(),
                     CXTranslationUnit_Flags.CXTranslationUnit_SkipFunctionBodies, out trans);
 
                 if (err != CXErrorCode.CXError_Success)
                 {
                     // 解析失敗
-                    Console.WriteLine($"TryParse failed: {err}");
-                    return false;
+                    Console.Error.WriteLine($"Parse failed: {err}");
+                    return null;
                 }
                 // 解析結果を代入
-                reflectedClass = GetReflectedClass(trans);
+                return GetReflectedClass(trans);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Parse failed: {ex.Message}");
             }
             finally
             {
                 trans.Dispose();
             }
-
-            return reflectedClass != null;
+            return null;
         }
         private unsafe  ReflectedClassInfo GetReflectedClass(CXTranslationUnit trans)
         {
@@ -218,52 +219,6 @@ namespace ClangTest
                 MetaOptions = attrs
             };
         }
-        unsafe CXChildVisitResult VisitChild(CXCursor cursor, CXCursor parent, void* client_data)
-        {
-            switch (cursor.kind)
-            {
-                // 名前空間
-                case CXCursorKind.CXCursor_Namespace:
-                    ReadNamespace(cursor);
-                    cursor.VisitChildren(new CXCursorVisitor(VisitChild), new CXClientData());
-                    RemoveNamespace();
-                    break;
-                // クラス
-                case CXCursorKind.CXCursor_ClassDecl:
-                    ReadClass(cursor);
-                    break;
-                // 列挙体
-                case CXCursorKind.CXCursor_EnumDecl:
-                    ReadEnum(cursor);
-                    break;
-                // 変数
-                case CXCursorKind.CXCursor_FieldDecl:
-                    ReadField(cursor);
-                    break;
-                // クラステンプレート
-                case CXCursorKind.CXCursor_ClassTemplate:
-                    ReadTClass(cursor);
-                    break;
-              
-                default:
-                    break;
-            }
-            return CXChildVisitResult.CXChildVisit_Continue;
-        }
-        unsafe CXChildVisitResult VisitEnum(CXCursor cursor, CXCursor parent, void* client_data)
-        {
-            CXType itype = clang.getEnumDeclIntegerType(cursor);
-            // 符号なし整数の場合
-            if (itype.kind == CXTypeKind.CXType_UInt)
-            {
-                Console.WriteLine("{0} {1}", clang.getCursorSpelling(cursor), clang.getEnumConstantDeclUnsignedValue(cursor));
-            }
-            else
-            {
-                Console.WriteLine("{0} {1}", clang.getCursorSpelling(cursor), clang.getEnumConstantDeclValue(cursor));
-            }
-            return CXChildVisitResult.CXChildVisit_Continue;
-        }
 
         /// <summary>
         /// インクルードしているヘッダを解析する
@@ -283,11 +238,11 @@ namespace ClangTest
             // ポインタをハンドルにキャスト
             GCHandle handle = GCHandle.FromIntPtr((IntPtr)clientData);
             // ハンドルからstringにキャスト
-            string? directory = (string?)handle.Target;
+            DirectoryHolder? holder = (DirectoryHolder?)handle.Target;
             // キャスト失敗
-            if (directory == null)
+            if (holder == null)
             {
-                Console.Error.WriteLine("ReflectedClassInfo is null !!!");
+                Console.Error.WriteLine("handle.target is null");
                 return;
             }
 
@@ -296,11 +251,10 @@ namespace ClangTest
             {
                 // インクルードディレクティブで使用するパスを取得
                 // 解析ファイルと同じディレクトリに配置するために、ファイル名のみ抽出
-                //reflectedClass.HeaderFile = Path.GetFileName(fileName);
                 // プロジェクトのディレクトリからの相対パスを取得
-                string relativeHeader = Path.GetRelativePath(ReflectionParser.projectDir.Trim(), fileName.Trim());
+                string relativeHeader = Path.GetRelativePath(ReflectionParser._projectDir.Trim(), fileName.Trim());
                 // ヘッダファイル名を除いたディレクトリを取得
-                directory = Path.GetDirectoryName(relativeHeader) ?? "";
+                holder.Value = Path.GetDirectoryName(relativeHeader) ?? "";
                 // ディレクトリを記録
                 return;
             }
@@ -335,10 +289,10 @@ namespace ClangTest
                 relativeHeader = fileName.Substring(idx + "/include/".Length);
                 includePath = ($"<{relativeHeader}>");
             }
-            else if (fileName.StartsWith(ReflectionParser.projectDir, StringComparison.OrdinalIgnoreCase))
+            else if (fileName.StartsWith(ReflectionParser._projectDir, StringComparison.OrdinalIgnoreCase))
             {
                 // プロジェクト配下のファイル
-                relativeHeader = Path.GetRelativePath(ReflectionParser.projectDir.Trim(), fileName.Trim());
+                relativeHeader = Path.GetRelativePath(ReflectionParser._projectDir.Trim(), fileName.Trim());
                 includePath = ($"\"{relativeHeader}\"");
             }
             else
@@ -349,52 +303,8 @@ namespace ClangTest
             }
             return includePath;
         }
-        void ReadNamespace(CXCursor cursor)
-        {
-            String name = clang.getCursorSpelling(cursor).ToString();
-            _namespace.Add(name);
-            _namespaceStr = String.Join("::", _namespace);
-        }
-        void RemoveNamespace()
-        {
-            _namespace.RemoveAt(_namespace.Count - 1);
-            _namespaceStr = String.Join("::", _namespace);
-        }
-        unsafe void ReadClass(CXCursor cursor)
-        {
-            Console.WriteLine("class ({1}){0}", clang.getCursorSpelling(cursor), _namespaceStr);
-            // さらに子を検索する
-            cursor.VisitChildren(new CXCursorVisitor(VisitChild), new CXClientData());
-        }
-        unsafe void ReadTClass(CXCursor cursor)
-        {
-            Console.WriteLine("テンプレートクラス定義発見 {0}", clang.getCursorSpelling(cursor));
-            // さらに子を検索する
-            cursor.VisitChildren(new CXCursorVisitor(VisitChild), new CXClientData());
-        }
-        unsafe void ReadEnum(CXCursor cursor)
-        {
-            Console.WriteLine("enum定義発見 {0}", clang.getCursorSpelling(cursor));
-            // さらに子を検索する
-            cursor.VisitChildren(new CXCursorVisitor(VisitEnum), new CXClientData());
-        }
-        void ReadField(CXCursor cursor)
-        {
-            CXType type = clang.getCursorType(cursor);
-            String typeName;
-            long arrCount = clang.getArraySize(type);
-            if (arrCount > 0)
-            {
-                CXType arrType = clang.getArrayElementType(type);
-                typeName = String.Format("{0}=>({1})", arrType, arrCount);
-            }
-            else
-            {
-                typeName = type.ToString();
-            }
-            Console.WriteLine("{0} {1}", typeName, clang.getCursorSpelling(cursor));
-        }
-        string GetNameSpace(CXCursor cursor)
+      
+        static string GetNameSpace(CXCursor cursor)
         {
             CXCursor parent = cursor.SemanticParent;
             if (parent.kind == CXCursorKind.CXCursor_Namespace)
@@ -432,22 +342,26 @@ namespace ClangTest
             return "";
         }
 
+        class DirectoryHolder
+        {
+            public string Value { get; set; } = string.Empty;
+        }
+        
         static unsafe string GetDirectory(CXTranslationUnit trans)
         {
-            string result = string.Empty;
+            var holder = new DirectoryHolder();
             // GC対象から外す
-            var handle = GCHandle.Alloc(result);
+            var handle = GCHandle.Alloc(holder);
             try
             {
                 // visitorにreflectedClassのポインタを渡す
                 trans.GetInclusions(new CXInclusionVisitor(InclusionVisitor), new CXClientData(GCHandle.ToIntPtr(handle)));
-
             }
             finally
             {
                 handle.Free();
             }
-            return result;
+            return holder.Value;
         }
 
         /// <summary>

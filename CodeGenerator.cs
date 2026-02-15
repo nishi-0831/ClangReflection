@@ -1,4 +1,5 @@
-﻿using ClangTest;
+﻿using ClangSharp.Interop;
+using ClangTest;
 using Scriban;
 using Scriban.Parsing;
 using System;
@@ -13,35 +14,55 @@ using System.Threading.Tasks;
 
 namespace ClangTest
 {
-	
+	public readonly struct GenerateTargetInfo
+	{
+		public string NameSpace { get; }
+		public string ClassName { get; }
+		public string Directory { get; }
+		public GenerateTargetInfo(string nameSpace,string className,string directory)
+		{
+			this.NameSpace = nameSpace;
+			this.ClassName = className;
+			this.Directory = directory;
+		}
+		public GenerateTargetInfo(ref readonly ReflectedClassInfo reflectedClass)
+		{
+			this.NameSpace= reflectedClass.NameSpace;
+			this.ClassName = reflectedClass.ClassName;
+			this.Directory = reflectedClass.Directory;
+		}
+    }
+
 	public class CodeGenerator
 	{
-		private string projectRoot = "";
-		private ParallelAnalysisCache cache;
-		private ReflectionParser reflectionParser;
-		private Encoding encoding;
-		private AnalysisConfig config;
-		public string ProjectRoot()
+		private string _projectRoot = "";
+		private ParallelAnalysisCache _cache;
+		private ReflectionParser _reflectionParser;
+		private Encoding _encoding;
+		private AnalysisConfig _config;
+		private const string CacheFilePath = ".analysis_cache.json";
+
+        public string ProjectRoot()
 		{
-			return projectRoot;
+			return _projectRoot;
 		}
 		public CodeGenerator(string projRoot, AnalysisConfig? analysisConfig = null)
 		{
-			config = analysisConfig ?? new AnalysisConfig();
-			projectRoot = projRoot.Trim();
-			string cacheFile = ".analysis_cache.json";
+			_config = analysisConfig ?? new AnalysisConfig();
+			_projectRoot = projRoot.Trim();
+			string cacheFile = CacheFilePath;
 			// ファイルのハッシュ値を分析するクラス
-			this.cache = new ParallelAnalysisCache(cacheFile);
+			this._cache = new ParallelAnalysisCache(cacheFile);
 			// 並列解析数
-            int maxParallelism = config.MaxDegreeOfParallelism.HasValue ? Math.Max(1, config.MaxDegreeOfParallelism.Value) : Environment.ProcessorCount;
+            int maxParallelism = _config.MaxDegreeOfParallelism.HasValue ? Math.Max(1, _config.MaxDegreeOfParallelism.Value) : Environment.ProcessorCount;
             // ファイルのリフレクション情報を解析するクラス
-            this.reflectionParser = new ReflectionParser(projectRoot,maxParallelism);
+            this._reflectionParser = new ReflectionParser(_projectRoot,maxParallelism);
 			// エンコーディングを取得
-            this.encoding = new System.Text.UTF8Encoding(false,true);
+            this._encoding = new System.Text.UTF8Encoding(false,true);
         }
 		public void ClearCache()
 		{
-			cache.Clear();
+			_cache.Clear();
 		}
         public void Run()
 		{
@@ -54,18 +75,18 @@ namespace ClangTest
 			var headerFiles = GetAnalysisTargetFile();
 
             // 再生成対象のファイルを取得
-            ConcurrentBag<string> filesToRegenerate = new ConcurrentBag<string> ( cache.FindFilesNeedingRegeneration(headerFiles));
+            ConcurrentBag<string> filesToRegenerate = new ConcurrentBag<string> ( _cache.FindFilesNeedingRegeneration(headerFiles));
 
 			var parallelOptions = new ParallelOptions()
 			{
-				MaxDegreeOfParallelism = config.MaxDegreeOfParallelism.HasValue ? Math.Max(1, config.MaxDegreeOfParallelism.Value) : Environment.ProcessorCount
+				MaxDegreeOfParallelism = _config.MaxDegreeOfParallelism.HasValue ? Math.Max(1, _config.MaxDegreeOfParallelism.Value) : Environment.ProcessorCount
 			};
 
 			// 再生成が必要なファイルなし
 			if (filesToRegenerate.Count == 0)
 			{
 				Console.WriteLine("[Gen] All files up-to-date. No regeneration needed.");
-				cache.SaveCacheToDisk();
+				_cache.SaveCacheToDisk();
 				return;
 			}
 
@@ -79,16 +100,16 @@ namespace ClangTest
 			{
 				try
 				{
-					string relative = Path.GetRelativePath(projectRoot, headerFile);
+					string relative = Path.GetRelativePath(_projectRoot, headerFile);
 
-					bool succeeded = reflectionParser.TryParse(headerFile, out ReflectedClassInfo? reflectedClass);
-					if (succeeded && reflectedClass != null)
+                    ReflectedClassInfo? reflectedClass = _reflectionParser.Parse(headerFile);
+					if (reflectedClass != null)
 					{
-						Generate(reflectedClass);
+						Generate(in reflectedClass);
 					}
 					lock (lockObj)
 					{
-						if(succeeded && reflectedClass != null)
+						if(reflectedClass != null)
 						{
                             regenerated++;
                             Console.WriteLine($"[Gen] {relative}");
@@ -99,7 +120,7 @@ namespace ClangTest
                             Console.WriteLine($"[Skipped] {relative}");
                         }
                     }
-					cache.UpdateCache(headerFile);
+					_cache.UpdateCache(headerFile);
 				}
 				catch (Exception ex)
 				{
@@ -115,131 +136,100 @@ namespace ClangTest
             stopwatch.Stop();
 
 			// キャッシュを保存
-			cache.SaveCacheToDisk();
+			_cache.SaveCacheToDisk();
 
 			// 結果を表示
 			Console.WriteLine();
 			Console.WriteLine($"[Gen] Complete in {stopwatch.ElapsedMilliseconds} ms");
 			Console.WriteLine($"[Gen] Regenerated: {regenerated}, Skipped: {skipped}, Failure: {failureCount}");
 
-			(reflectionParser as IDisposable)?.Dispose();
+			(_reflectionParser as IDisposable)?.Dispose();
 		}
-		private void Generate( ReflectedClassInfo reflectedClass)
+		
+		private void Generate(ref readonly ReflectedClassInfo reflectedClass)
 		{
-			// MT_COMPONENT属性(マクロ)が付与されているクラスのみ生成対象とする
-			if (reflectedClass.Attributes.Contains("MT_COMPONENT") == false)
+			List<string> results = new ();
+			foreach(var rule in _config.CodeGenerationRules)
 			{
-				Console.WriteLine("[Gen] Not Attribute MT_COMPONENT");
-				return;
+				string result = Render(in reflectedClass, rule);
+				results.Add(result);
 			}
-			// ヘッダの生成
-			GenerateHeader(reflectedClass);
-		}
-		private void GenerateHeader(ReflectedClassInfo reflectedClass)
+			MergeTemplate(results, new GenerateTargetInfo(in reflectedClass));
+        }
+		
+		private string Render(ref readonly ReflectedClassInfo classInfo,CodeGenerationRule rule)
 		{
-			string scribanFile = "GenerateComponentHeader.sbn";
-						
-			// 実行ファイルと同じディレクトリ内を探す
-			string sourcePath = Path.Combine(AppContext.BaseDirectory, scribanFile);
-			string headerTemplateText="";
-			try
-			{
-				headerTemplateText = File.ReadAllText(sourcePath, encoding);
-			}
-			catch (Exception ex)
-			{
-				Console.WriteLine($"ファイル書き込みエラー:{ex.GetType().Name},{ex.Message}");
-			}
-			// 生成用のScribanファイルを解析
-			Template headerTemplate = Template.Parse(headerTemplateText);
+			string result = string.Empty;
+            if (rule.ClassMetadataType != null && rule.ClassMetadataType != classInfo.MetadataType)
+                return result;
+            string templateFilePath = Path.Combine(_projectRoot, rule.OutputTeplate);
+			if (File.Exists(templateFilePath) == false)
+				return result;
 
-			// Scribanのテンプレートに変数をバインドする
-			string headerResult = headerTemplate.Render(new
+            List<ReflectedMember> members = new();
+
+            members = classInfo.Members.
+                Where(member => member.MetaOptions.Contains(rule.MetadataOptions)).
+                Where(member => member.MetadataType == rule.MemberMetadataType).ToList();
+
+            string templateString = "";
+            try
+            {
+                templateString = File.ReadAllText(rule.OutputTeplate);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"File Read Error:{ex.GetType().Name},{ex.Message}");
+            }
+            Template template = Template.Parse(templateString);
+
+            result = template.Render(new
+            {
+                @name_space = classInfo.NameSpace,
+                @class_name = classInfo.ClassName,
+                @properties = members
+            });
+			return result;
+        }
+		private void MergeTemplate(List<string> results, GenerateTargetInfo targetInfo)
+		{
+			string templateMergerFile = "hoge.sbn";
+			Template merger = Template.Parse(templateMergerFile);
+
+			string result = merger.Render(new
 			{
-				@name_space = reflectedClass.NameSpace,
-				@class_name = reflectedClass.ClassName,
-				@properties = reflectedClass.Members
-				.Where(m => m.Attributes.Contains("MT_PROPERTY"))
-				.Select(m => new
-				{
-					@name = m.Name,
-					@type_name = m.TypeName
-				})
-				.ToList()
+				@name_space = targetInfo.NameSpace,
+				@class_name = targetInfo.ClassName,
+				@properties = results
 			});
-			string fileName = $"{reflectedClass.ClassName}.generated.h";
-			string filePath = Path.GetFullPath(Path.Combine(projectRoot, reflectedClass.Directory));
-			string generatePath = Path.GetFullPath(Path.Combine(filePath, fileName));
-			Console.WriteLine($"generate:{generatePath}");
-			try
-			{
-                File.WriteAllText(generatePath, headerResult, encoding);
-			}
-			catch(Exception ex)
-			{
-				Console.WriteLine($"ファイル書き込みエラー:{ex.GetType().Name},{ex.Message}");
-			}
-		}
-		private void GenerateCpp(ReflectedClassInfo reflectedClass)
-		{
-			string scribanFile = "GenerateComponentCpp.sbn";
 
-			// 実行ファイルと同じディレクトリ内を探す
-			string sourcePath = Path.Combine(AppContext.BaseDirectory, scribanFile);
-			string headerTemplateText = "";
+			string fileName = $"{targetInfo.ClassName}.generated.h";
+			string filePath = Path.GetFullPath(Path.Combine(_projectRoot, targetInfo.Directory));
+			string generateFile = Path.GetFullPath(Path.Combine(filePath, fileName));
+			Console.WriteLine($"generate:{generateFile}");
 			try
 			{
-				headerTemplateText = File.ReadAllText(sourcePath, encoding);
+				File.WriteAllText(generateFile, result, _encoding);
 			}
 			catch (Exception ex)
 			{
-				Console.WriteLine($"ファイル書き込みエラー:{ex.GetType().Name},{ex.Message}");
-			}
-			// 生成用のScribanファイルを解析
-			Template headerTemplate = Template.Parse(headerTemplateText);
-
-            // Scribanのテンプレートに変数をバインドする
-            string cppResult = headerTemplate.Render(new
-			{
-				@header_file = reflectedClass.HeaderFile,
-				@class_name = reflectedClass.ClassName,
-				@properties = reflectedClass.Members
-				.Where(m => m.Attributes.Contains("MT_PROPERTY"))
-				.Select(m => new
-				{
-					@name = m.Name,
-					@type_name = m.TypeName
-				})
-				.ToList()
-			});
-			string fileName = $"{reflectedClass.ClassName}.generated.cpp";
-			string filePath = Path.GetFullPath(Path.Combine(projectRoot, reflectedClass.Directory));
-			string generatePath = Path.GetFullPath(Path.Combine(filePath, fileName));
-			Console.WriteLine($"generate:{generatePath}");
-			try
-			{
-                File.WriteAllText(generatePath, cppResult, encoding);
-			}
-			catch (Exception ex)
-			{
-				Console.WriteLine($"ファイル書き込みエラー:{ex.GetType().Name},{ex.Message}");
+				Console.Error.WriteLine($"File Write Error:{ex.GetType().Name},{ex.Message}");
 			}
 		}
-
-		private List<string> GetAnalysisTargetFile()
+        private List<string> GetAnalysisTargetFile()
 		{
             // ファイルを取得
-            var headerFiles = Directory.GetFiles(projectRoot, "*.h", SearchOption.AllDirectories).ToList();
+            var headerFiles = Directory.GetFiles(_projectRoot, "*.h", SearchOption.AllDirectories).ToList();
 
-			if (config.ExcludeDirectories != null && config.ExcludeDirectories.Length > 0)
+			if (_config.ExcludeDirectories != null && _config.ExcludeDirectories.Length > 0)
 			{
 				// 除外するディレクトリを絶対パスで取得
-				var absoluteExcludes = config.ExcludeDirectories
+				var absoluteExcludes = _config.ExcludeDirectories
 					.Where(s => string.IsNullOrWhiteSpace(s) == false)
                     .Select(s =>
                     {
                         // 相対パスの場合はプロジェクトのルートと結合。絶対パスならそのまま
-                        string p = Path.IsPathRooted(s) ? s : Path.GetFullPath(Path.Combine(projectRoot, s));
+                        string p = Path.IsPathRooted(s) ? s : Path.GetFullPath(Path.Combine(_projectRoot, s));
                         // 終端に"\"(バックスラッシュ)が付いていない場合は、付ける
                         if (p.EndsWith(Path.DirectorySeparatorChar) == false)
                         {

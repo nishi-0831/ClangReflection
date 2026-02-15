@@ -2,15 +2,16 @@
 #include "Vector3.h"
 #include "Hoge.h"
 #include <iostream>
-#define MT_PROPERTY()
-#define MT_FUNCTION()
-#define MT_COMPONENT()
+
+#define MT_STRINGIFY(...) #__VA_ARGS__
+#define MT_PROPERTY(...) __attribute__((annotate("MT_PROPERTY," MT_STRINGIFY(__VA_ARGS__))))
+#define MT_FUNCTION(...) __attribute__((annotate("MT_FUNCTION," MT_STRINGIFY(__VA_ARGS__))))
+#define MT_COMPONENT(...) __attribute__((annotate("MT_COMPONENT," MT_STRINGIFY(__VA_ARGS__))))
 #define MT_GENERATED_BODY()
 
 
 
-MT_COMPONENT()
-class Transform
+class MT_COMPONENT() Transform
 {
 public:
 	MT_GENERATED_BODY()
@@ -21,6 +22,4 @@ private:
 	Vector3 position_;
 	MT_PROPERTY()
 	Hoge hoge_;
-	// 既存のコード(省略)
-	//Matrix4x4 matrixWorld_;
 };
