@@ -3,15 +3,16 @@ using ClangSharp.Interop;
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Runtime.InteropServices;
-using System.Runtime.CompilerServices;
-using System.Security.Cryptography.X509Certificates;
-using System.Text.RegularExpressions;
-using System.Reflection;
 using System.IO.Enumeration;
+using System.Linq;
+using System.Reflection;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Security.Cryptography.X509Certificates;
+using System.Text;
+using System.Text.RegularExpressions;
+using System.Threading.Tasks;
+using YamlDotNet.Core;
 namespace ClangTest
 {
     class ReflectionParser : IDisposable
@@ -109,9 +110,6 @@ namespace ClangTest
         private unsafe bool TryParseImpl(string filePath,out ReflectedClassInfo? reflectedClass)
         {
             reflectedClass = null;
-
-            // ソースから属性を抽出
-            Dictionary<string, List<string>> attributeMap = ExtractAttributesFromSource(filePath);
             
             // ディレクトリを取得
             string directory = Path.GetDirectoryName(filePath) ?? "";
@@ -133,40 +131,8 @@ namespace ClangTest
                     Console.WriteLine($"TryParse failed: {err}");
                     return false;
                 }
-
-                CXCursor cursor = trans.Cursor;
-
-                // outパラメータはラムダ式内で使用できないのでローカル変数を用意
-                ReflectedClassInfo? localReflectedClass = null;
-                cursor.VisitChildren((cur, parent, clientData) =>
-                {
-                    CXSourceLocation cxSourceLocation = clang.getCursorLocation(cur);
-                    if (cxSourceLocation.IsFromMainFile == false)
-                    {
-                        return CXChildVisitResult.CXChildVisit_Continue;
-                    }
-                    if (cur.kind == CXCursorKind.CXCursor_ClassDecl)
-                    {
-                        localReflectedClass = GetReflectedClass(cur, attributeMap);
-
-                        // GC対象から外す
-                        var handle = GCHandle.Alloc(localReflectedClass);
-                        try
-                        {
-                            // visitorにreflectedClassのポインタを渡す
-                            trans.GetInclusions(new CXInclusionVisitor(InclusionVisitor), new CXClientData(GCHandle.ToIntPtr(handle)));
-
-                        }
-                        finally
-                        {
-                            handle.Free();
-                        }
-                    }
-                    return CXChildVisitResult.CXChildVisit_Recurse;
-
-                }, new CXClientData());
                 // 解析結果を代入
-                reflectedClass = localReflectedClass;
+                reflectedClass = GetReflectedClass(trans);
             }
             finally
             {
@@ -175,50 +141,83 @@ namespace ClangTest
 
             return reflectedClass != null;
         }
-        private unsafe ReflectedClassInfo GetReflectedClass(CXCursor classCursor,Dictionary<string,List<string>> attributeMap)
+        private unsafe  ReflectedClassInfo GetReflectedClass(CXTranslationUnit trans)
         {
-            // クラスの情報取得
-            ReflectedClassInfo reflectedClass = new ReflectedClassInfo()
+            CXCursor cursor = trans.Cursor;
+            List<string> classAnnotations = GetAnnotations(cursor);
+            List<string> classAttributes = new();
+            string metaType = "";
+            foreach (string anno in classAnnotations)
             {
-                ClassName = clang.getCursorSpelling(classCursor).ToString(),
-                NameSpace = GetNameSpace(classCursor)
-            };
-            if(attributeMap.ContainsKey(reflectedClass.ClassName))
-            {
-                reflectedClass.Attributes = attributeMap[reflectedClass.ClassName];
+                var (macroName, args) = ParseAnnotation(anno);
+                classAttributes.AddRange(args);
+                metaType = macroName;
             }
 
+            // outパラメータはラムダ式内で使用できないのでローカル変数を用意
             // メンバの情報取得
             List<ReflectedMember> fields = new List<ReflectedMember>();
-            classCursor.VisitChildren((child, parent, clientData) =>
+            string directory ="";
+            cursor.VisitChildren((child, parent, clientData) =>
             {
-                if (child.Kind == CXCursorKind.CXCursor_FieldDecl)
+                CXSourceLocation cxSourceLocation = clang.getCursorLocation(child);
+                if (cxSourceLocation.IsFromMainFile == false)
                 {
-                    string name = clang.getCursorSpelling(child).ToString();
-                    string type = clang.getTypeSpelling(clang.getCursorType(child)).ToString();
-                    CX_CXXAccessSpecifier access = clang.getCXXAccessSpecifier(child);
-
-                    List<string> attrs = new List<string>();
-                    if(attributeMap.ContainsKey(name))
-                    {
-                        attrs = attributeMap[name];
-                    }
-                    fields.Add(new ReflectedMember
-                    {
-                        Name = name,
-                        TypeName = type,
-                        IsPrivate = (access == CX_CXXAccessSpecifier.CX_CXXPrivate),
-                        AccessLevel = GetAccessLevel(child),
-                        Attributes = attrs
-                    });
+                    return CXChildVisitResult.CXChildVisit_Continue;
                 }
-                return CXChildVisitResult.CXChildVisit_Continue;
+                if (child.kind == CXCursorKind.CXCursor_ClassDecl)
+                {
+                    directory = GetDirectory(trans);
+                }
+                else if(child.kind == CXCursorKind.CXCursor_FieldDecl)
+                {
+                    fields.Add(GetReflectedMember(child));
+                }
+                return CXChildVisitResult.CXChildVisit_Recurse;
+
             }, new CXClientData());
 
-            reflectedClass.Members = fields;
+            // 解析結果を代入
+            ReflectedClassInfo reflectedClass = new ReflectedClassInfo
+            {
+                ClassName = clang.getCursorSpelling(cursor).ToString(),
+                NameSpace = GetNameSpace(cursor),
+                MetadataType = metaType,
+                MetaOptions = classAttributes,
+                Members = fields,
+                Directory = directory,
+            };
             return reflectedClass;
         }
-       
+        static ReflectedMember GetReflectedMember(CXCursor cursor)
+        {
+            // 変数名
+            string name = clang.getCursorSpelling(cursor).ToString();
+            // 型名
+            string type = clang.getTypeSpelling(clang.getCursorType(cursor)).ToString();
+            // アクセス修飾子
+            CX_CXXAccessSpecifier access = clang.getCXXAccessSpecifier(cursor);
+
+            List<string> fieldAnnotations = GetAnnotations(cursor);
+            List<string> attrs = new();
+            string metadataType = "";
+            foreach (string anno in fieldAnnotations)
+            {
+                var (macroName, args) = ParseAnnotation(anno);
+                metadataType = macroName;
+                attrs.AddRange(args);
+            }
+
+            return new ReflectedMember
+            {
+                Name = name,
+                TypeName = type,
+                IsPrivate = (access == CX_CXXAccessSpecifier.CX_CXXPrivate),
+                AccessLevel = GetAccessLevel(cursor),
+                MetadataType = metadataType,
+                MetaOptions = attrs
+            };
+        }
         unsafe CXChildVisitResult VisitChild(CXCursor cursor, CXCursor parent, void* client_data)
         {
             switch (cursor.kind)
@@ -245,6 +244,7 @@ namespace ClangTest
                 case CXCursorKind.CXCursor_ClassTemplate:
                     ReadTClass(cursor);
                     break;
+              
                 default:
                     break;
             }
@@ -282,10 +282,10 @@ namespace ClangTest
 
             // ポインタをハンドルにキャスト
             GCHandle handle = GCHandle.FromIntPtr((IntPtr)clientData);
-            // ハンドルからReflectedClassInfoにキャスト
-            ReflectedClassInfo? reflectedClass = (ReflectedClassInfo?)handle.Target;
+            // ハンドルからstringにキャスト
+            string? directory = (string?)handle.Target;
             // キャスト失敗
-            if (reflectedClass == null)
+            if (directory == null)
             {
                 Console.Error.WriteLine("ReflectedClassInfo is null !!!");
                 return;
@@ -296,13 +296,12 @@ namespace ClangTest
             {
                 // インクルードディレクティブで使用するパスを取得
                 // 解析ファイルと同じディレクトリに配置するために、ファイル名のみ抽出
-                reflectedClass.HeaderFile = Path.GetFileName(fileName);
+                //reflectedClass.HeaderFile = Path.GetFileName(fileName);
                 // プロジェクトのディレクトリからの相対パスを取得
                 string relativeHeader = Path.GetRelativePath(ReflectionParser.projectDir.Trim(), fileName.Trim());
                 // ヘッダファイル名を除いたディレクトリを取得
-                string directory = Path.GetDirectoryName(relativeHeader) ?? "";
+                directory = Path.GetDirectoryName(relativeHeader) ?? "";
                 // ディレクトリを記録
-                reflectedClass.Directory = directory;                
                 return;
             }
             // 翻訳単位が、推移的にではなく直接インクルードしているファイル
@@ -409,7 +408,7 @@ namespace ClangTest
         /// </summary>
         /// <param name="cursor"></param>
         /// <returns>private,public,protectedのいずれかの文字列を返す。どれにも該当しない場合、空文字("")を返す</returns>
-        string GetAccessLevel(CXCursor cursor)
+        static string GetAccessLevel(CXCursor cursor)
         {
             // アクセス修飾子を取得
             CX_CXXAccessSpecifier access = clang.getCXXAccessSpecifier(cursor);
@@ -433,174 +432,68 @@ namespace ClangTest
             return "";
         }
 
-        private static readonly Regex MemberRegex = new(
-             $@"(MT_PROPERTY|MT_FUNCTION)\s*\(\s*\)\s*" +
-                @"(?:(?:\s*//[^\r\n]*|\s*/\*[\s\S]*?\*/|\s+))*" +   // コメント/空白を0回以上許可
-                @"(?:(?:const|volatile|static|mutable|virtual)\s+)*" +
-                @"(?:[\w:<>,\s&*\[\]]+?)\s+" +                     // 型(配列や<>含む)
-                @"(\w+)\s*[;=]",
-             RegexOptions.Multiline | RegexOptions.Singleline | RegexOptions.Compiled);
-
-        private static readonly Regex ClassRegex = new
-            ($@"(MT_COMPONENT)\s*\(\s*\)" +
-                @"(?:\s*//.*?|" + // C++の単一行コメント
-                @"\s*/\*.*?\*/|" + // C++のブロックコメント
-                @"\s+)*" +         // 空白文字
-                @"class\s+(\w+)",
-            RegexOptions.Multiline | RegexOptions.Singleline | RegexOptions.Compiled);
-
-        /// <summary>
-        /// ファイルから、識別子(変数、関数、クラス)に付与された属性を抽出する
-        /// </summary>
-        /// <param name="sourceFilePath">解析するファイルのパス</param>
-        /// <returns>
-        /// <para> キー : 識別子 , 値 : 属性 の辞書を返す </para>
-        /// <para> 例( キー : hoge , 値 : Property )</para>
-        /// </returns>
-        static Dictionary<string, List<string>> ExtractAttributesFromSource(string sourceFilePath)
+        static unsafe string GetDirectory(CXTranslationUnit trans)
         {
-            string sourceCode = File.ReadAllText(sourceFilePath);
-            Dictionary<string, List<string>> attributeMap = new Dictionary<string, List<string>>();
-
-            // 正規表現を用いて解析する
-
-            // TODO:属性をハードコーディングするのでなく、外部ファイルから読み取るなど別の方法を採るべき
-
-            // メンバを解析
-            foreach (Match match in MemberRegex.Matches(sourceCode))
+            string result = string.Empty;
+            // GC対象から外す
+            var handle = GCHandle.Alloc(result);
+            try
             {
-                if (match.Groups.Count > 0)
-                {
-                    // マクロ名(属性名)、変数名を取得
-                    string macroName = match.Groups[1].Value;
-                    string fieldName = match.Groups[2].Value;
+                // visitorにreflectedClassのポインタを渡す
+                trans.GetInclusions(new CXInclusionVisitor(InclusionVisitor), new CXClientData(GCHandle.ToIntPtr(handle)));
 
-                    if (attributeMap.ContainsKey(fieldName) == false)
-                    {
-                        attributeMap[fieldName] = new List<string>();
-                    }
-                    attributeMap[fieldName].Add(macroName);
-                }
             }
-
-            // クラス、構造体を解析
-            foreach (Match match in ClassRegex.Matches(sourceCode))
+            finally
             {
-                if(match.Groups.Count > 0)
-                {
-                    // マクロ名(属性名)、クラス名を取得
-                    string macroName = match.Groups[1].Value;
-                    string className = match.Groups[2].Value;
-
-                    if(attributeMap.ContainsKey(className) == false)
-                    {
-                        attributeMap[className] = new List<string>();
-                    }
-                    attributeMap[className].Add(macroName);
-                }
+                handle.Free();
             }
-            return attributeMap;
+            return result;
         }
+
         /// <summary>
-        /// 正規表現パターンをテストするメソッド
+        /// カーソルに付与されたannotate属性を取得する
         /// </summary>
-        public static void TestRegexPattern()
+        /// <param name="cursor"></param>
+        /// <returns></returns>
+        static unsafe List<string> GetAnnotations(CXCursor cursor)
         {
-            // クラス用テストケース（既存）
-            string[] classTestCases = new[]
+            List<string> annotations = new();
+            cursor.VisitChildren((child, parent, clientData) =>
             {
-                "MT_COMPONENT() class MyClass { };",
-                "MT_COMPONENT() // これはクラスです\nclass MyClass { };",
-                "MT_COMPONENT() /* クラス定義 */\nclass AnotherClass { };",
-                "MT_COMPONENT() /* 複数行\nコメント */\nclass ThirdClass { };",
-                "MT_COMPONENT() public class PublicClass { };",
-                "MT_COMPONENT() class FirstClass { };\nMT_COMPONENT() class SecondClass { };",
-                "MT_COMPONENT() // コメント\npublic class MixedClass { };"
-            };
-
-            // メンバ用テストケース（マクロと宣言の間にコメントや空白を含むケースを追加）
-            string[] memberTestCases = new[]
-            {
-                // シンプルな変数
-                "MT_PROPERTY() int x;",
-                // 単一行コメントを挟む
-                "MT_PROPERTY() // コメントを挟む\nint commentedField;",
-                // ブロックコメントを挟む（単一行）
-                "MT_PROPERTY() /* ブロックコメント */\nint blockField;",
-                // ブロックコメントを跨ぐ（複数行）
-                "MT_PROPERTY() /* 複数行\nコメント */\nstatic const int multiBlockField = 0;",
-                // 関数宣言（戻り値と名前）
-                "MT_FUNCTION() void Foo();",
-                // 関数宣言でブロックコメントを挟む
-                "MT_FUNCTION() /* コメント */\nstd::vector<int> GetVector();",
-                // 修飾子（static, const, virtual等）を含むケース
-                "MT_PROPERTY() static const std::string name = \"hoge\";",
-                // テンプレート、参照、ポインタを含むケース
-                "MT_FUNCTION() std::vector<int>&& CreateList();"
-            };
-
-            // クラス用パターン（既存と同様にコメントと空白を許可）
-            string classPattern = $@"(MT_COMPONENT)\s*\(\s*\)" +
-                @"(?:(?:\s*//[^\r\n]*|\s*/\*[\s\S]*?\*/|\s+))*" +
-                @"(?:public\s+)?" +
-                @"class\s+(\w+)";
-
-            // メンバ用パターン（マクロ → コメント/空白 → 任意の修飾子 → 型 → 識別子）
-            string memberPattern = $@"(MT_PROPERTY|MT_FUNCTION)\s*\(\s*\)\s*" +
-                @"(?:(?:\s*//[^\r\n]*|\s*/\*[\s\S]*?\*/|\s+))*" +   // コメント／空白を0回以上許可
-                @"(?:(?:const|volatile|static|mutable|virtual)\s+)*" +
-                @"(?:[\w:<>,\s&*\[\]]+?)\s+" +                     // 型（配列や<>含む）
-                @"(\w+)\s*[;=]";
-
-            Console.WriteLine("=== クラス用 正規表現テスト開始 ===\n");
-            for (int i = 0; i < classTestCases.Length; i++)
-            {
-                string testCase = classTestCases[i];
-                Console.WriteLine($"テストケース {i + 1}:");
-                Console.WriteLine($"入力: {testCase.Replace("\n", "\\n")}");
-
-                MatchCollection matches = Regex.Matches(testCase, classPattern, RegexOptions.Multiline | RegexOptions.Singleline);
-
-                if (matches.Count > 0)
+                if(child.kind == CXCursorKind.CXCursor_AnnotateAttr)
                 {
-                    foreach (Match match in matches)
-                    {
-                        string macroName = match.Groups[1].Value;
-                        string className = match.Groups[2].Value;
-                        Console.WriteLine($"✓ マッチ - マクロ: {macroName}, クラス名: {className}");
-                    }
+                    annotations.Add(clang.getCursorSpelling(child).ToString());
                 }
-                else
-                {
-                    Console.WriteLine("✗ マッチなし");
-                }
-                Console.WriteLine();
+                return CXChildVisitResult.CXChildVisit_Continue;
+            }, new CXClientData());
+            return annotations;
+        }
+
+        /// <summary>
+        /// annotate文字列をパースして、マクロ名と引数を分離する
+        /// 例 : "MT_PROPERTY,Serializable,Min=0,Max=100"
+        ///    - macroname = "MT_PROPERTY"
+        ///    - args = ["Serializable","Min=0","Max=100"]
+        /// </summary>
+        /// <param name="annotation">解析するannotate文字列</param>
+        /// <returns></returns>
+        static (string macroName, List<string> args) ParseAnnotation(string annotation)
+        {
+            // 最初のカンマでマクロ名と残りの引数を分割
+            int firstComma = annotation.IndexOf(',');
+            // カンマがない場合は-1が返される
+            if(firstComma < 0)
+            {
+                // 引数なし、マクロ名のみ
+                return (annotation.Trim(), new List<string>());
             }
-
-            Console.WriteLine("=== メンバ用 正規表現テスト開始 ===\n");
-            for (int i = 0; i < memberTestCases.Length; i++)
-            {
-                string testCase = memberTestCases[i];
-                Console.WriteLine($"テストケース {i + 1}:");
-                Console.WriteLine($"入力: {testCase.Replace("\n", "\\n")}");
-
-                MatchCollection matches = Regex.Matches(testCase, memberPattern, RegexOptions.Multiline | RegexOptions.Singleline);
-
-                if (matches.Count > 0)
-                {
-                    foreach (Match match in matches)
-                    {
-                        string macroName = match.Groups[1].Value;
-                        string memberName = match.Groups[2].Value;
-                        Console.WriteLine($"✓ マッチ - マクロ: {macroName}, 識別子: {memberName}");
-                    }
-                }
-                else
-                {
-                    Console.WriteLine("✗ マッチなし");
-                }
-                Console.WriteLine();
-            }
+            // 先頭からfirstCommaまでの範囲を取得
+            string macroName = annotation[..firstComma].Trim();
+            // firstComma直後から、末尾までの範囲を取得
+            string rest = annotation[(firstComma + 1)..];
+            // カンマ区切りで、空文字列や空白を除去して取得
+            List<string> args = rest.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).ToList();
+            return (macroName, args);
         }
     }
 }
