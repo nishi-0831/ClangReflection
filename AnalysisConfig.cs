@@ -14,7 +14,7 @@ namespace ClangTest
         public string? ClassMetadataType {  get; set; }
         public string? MemberMetadataType { get; set; }
         public string MetadataOptions { get; set; } = "";
-        public string OutputTeplate { get; set; } = "";
+        public string OutputTemplate { get; set; } = "";
     }
 
     public class AnalysisConfig

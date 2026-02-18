@@ -116,10 +116,10 @@ namespace ClangTest
 
                 // C++20のヘッダファイルを読みこむ
                 var args = new[] { "-std=c++20", $"-I{directory}", "-x", "c++-header", "-fsyntax-only" };
-                // excludeDeclarationsFromPch: PCHに含まれる宣言を解析対象から除外するかどうか。
+                // excludeDeclarationsFromPch: PCHに含まれる宣言を解析対象から除外するかどうか
                 using CXIndex index = CXIndex.Create(excludeDeclarationsFromPch: true);
 
-                // エラーコードを受け取り、失敗なら表示する（Parse を使う）
+                // エラーコードを受け取り、失敗なら表示する
                 var err = CXTranslationUnit.TryParse(index, filePath, args, Array.Empty<CXUnsavedFile>(),
                     CXTranslationUnit_Flags.CXTranslationUnit_SkipFunctionBodies, out trans);
 
@@ -145,17 +145,11 @@ namespace ClangTest
         private unsafe  ReflectedClassInfo GetReflectedClass(CXTranslationUnit trans)
         {
             CXCursor cursor = trans.Cursor;
-            List<string> classAnnotations = GetAnnotations(cursor);
+            List<string> classAnnotations = new();
             List<string> classAttributes = new();
             string metaType = "";
-            foreach (string anno in classAnnotations)
-            {
-                var (macroName, args) = ParseAnnotation(anno);
-                classAttributes.AddRange(args);
-                metaType = macroName;
-            }
-
-            // outパラメータはラムダ式内で使用できないのでローカル変数を用意
+            string className = "";
+            string nameSpace = "";
             // メンバの情報取得
             List<ReflectedMember> fields = new List<ReflectedMember>();
             string directory ="";
@@ -168,6 +162,15 @@ namespace ClangTest
                 }
                 if (child.kind == CXCursorKind.CXCursor_ClassDecl)
                 {
+                    className = clang.getCursorSpelling(child).ToString();
+                    nameSpace = GetNameSpace(child);
+                    classAnnotations = GetAnnotations(child);
+                    foreach (string anno in classAnnotations)
+                    {
+                        var (macroName, args) = ParseAnnotation(anno);
+                        classAttributes.AddRange(args);
+                        metaType = macroName;
+                    }
                     directory = GetDirectory(trans);
                 }
                 else if(child.kind == CXCursorKind.CXCursor_FieldDecl)
@@ -181,8 +184,8 @@ namespace ClangTest
             // 解析結果を代入
             ReflectedClassInfo reflectedClass = new ReflectedClassInfo
             {
-                ClassName = clang.getCursorSpelling(cursor).ToString(),
-                NameSpace = GetNameSpace(cursor),
+                ClassName = className,
+                NameSpace = nameSpace,
                 MetadataType = metaType,
                 MetaOptions = classAttributes,
                 Members = fields,

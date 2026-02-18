@@ -2,7 +2,7 @@
   "profiles": {
     "ClangTest": {
       "commandName": "Project",
-      "commandLineArgs": "C:\\Users\\nishi\\source\\repos\\ClangTest\\Reflection\\ --force"
+      "commandLineArgs": "C:\\Users\\nishi\\source\\repos\\ClangTest C:\\Users\\nishi\\source\\repos\\ClangTest --force"
     }
   }
 }

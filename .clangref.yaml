@@ -7,14 +7,4 @@ MaxDegreeOfParallelism: 4
 CodeGenerationRules:
   -  ClassMetadataType: "MT_COMPONENT"
      MemberMetadataType: "MT_PROPERTY"
-     MetadataOptions: "Serializable"
-     OutputTemplate: "tools/ClangReflection/SerializeComponent.sbn"
-
-  -  ClassMetadataType: "MT_COMPONENT"
-     MemberMetadataType: "MT_PROPERTY"
-     MetadataOptions: "DisplayEditor"
-     OutputTemplate: "tools/ClangReflection/DisplayEditorComponent.sbn"
-
-  -  MemberMetadataType: "MT_FUNCTION"
-     MetadataOptions: "ContextMenu"
-     OutputTemplate: "tools/ClangReflection/CallFunction.sbn"
+     OutputTemplate: "GenerateComponentHeader.sbn"

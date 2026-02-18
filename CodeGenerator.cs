@@ -109,6 +109,8 @@ namespace ClangTest
 					}
 					lock (lockObj)
 					{
+						// TODO: Generateで実際に生成されるとは限らないため、
+						// この条件式でカウントするのは間違い。Loggerを用意して詳細にチェックすべし
 						if(reflectedClass != null)
 						{
                             regenerated++;
@@ -149,12 +151,25 @@ namespace ClangTest
 		private void Generate(ref readonly ReflectedClassInfo reflectedClass)
 		{
 			List<string> results = new ();
+			
 			foreach(var rule in _config.CodeGenerationRules)
 			{
 				string result = Render(in reflectedClass, rule);
-				results.Add(result);
+				if (string.IsNullOrEmpty(result))
+					continue;
+				string fileName = $"{reflectedClass.ClassName}.generated.h";
+				string filePath = Path.GetFullPath(Path.Combine(_projectRoot, reflectedClass.Directory));
+				string generateFile = Path.GetFullPath(Path.Combine(filePath, fileName));
+				try
+				{
+					File.WriteAllText(generateFile, result, _encoding);
+					Console.WriteLine($"generate:{generateFile}");
+				}
+				catch (Exception ex)
+				{
+					Console.Error.WriteLine($"File Write Error:{ex.GetType().Name},{ex.Message}");
+				}
 			}
-			MergeTemplate(results, new GenerateTargetInfo(in reflectedClass));
         }
 		
 		private string Render(ref readonly ReflectedClassInfo classInfo,CodeGenerationRule rule)
@@ -162,20 +177,20 @@ namespace ClangTest
 			string result = string.Empty;
             if (rule.ClassMetadataType != null && rule.ClassMetadataType != classInfo.MetadataType)
                 return result;
-            string templateFilePath = Path.Combine(_projectRoot, rule.OutputTeplate);
+            string templateFilePath = Path.Combine(_projectRoot, rule.OutputTemplate);
 			if (File.Exists(templateFilePath) == false)
 				return result;
 
             List<ReflectedMember> members = new();
 
             members = classInfo.Members.
-                Where(member => member.MetaOptions.Contains(rule.MetadataOptions)).
+                Where(member => member.MetaOptions.Contains(rule.MetadataOptions) || string.IsNullOrEmpty(rule.MetadataOptions)).
                 Where(member => member.MetadataType == rule.MemberMetadataType).ToList();
 
             string templateString = "";
             try
             {
-                templateString = File.ReadAllText(rule.OutputTeplate);
+                templateString = File.ReadAllText(templateFilePath);
             }
             catch (Exception ex)
             {
@@ -191,31 +206,7 @@ namespace ClangTest
             });
 			return result;
         }
-		private void MergeTemplate(List<string> results, GenerateTargetInfo targetInfo)
-		{
-			string templateMergerFile = "hoge.sbn";
-			Template merger = Template.Parse(templateMergerFile);
-
-			string result = merger.Render(new
-			{
-				@name_space = targetInfo.NameSpace,
-				@class_name = targetInfo.ClassName,
-				@properties = results
-			});
-
-			string fileName = $"{targetInfo.ClassName}.generated.h";
-			string filePath = Path.GetFullPath(Path.Combine(_projectRoot, targetInfo.Directory));
-			string generateFile = Path.GetFullPath(Path.Combine(filePath, fileName));
-			Console.WriteLine($"generate:{generateFile}");
-			try
-			{
-				File.WriteAllText(generateFile, result, _encoding);
-			}
-			catch (Exception ex)
-			{
-				Console.Error.WriteLine($"File Write Error:{ex.GetType().Name},{ex.Message}");
-			}
-		}
+		
         private List<string> GetAnalysisTargetFile()
 		{
             // ファイルを取得
