@@ -180,51 +180,7 @@ namespace ClangTest
 				Console.WriteLine($"ファイル書き込みエラー:{ex.GetType().Name},{ex.Message}");
 			}
 		}
-		private void GenerateCpp(ReflectedClassInfo reflectedClass)
-		{
-			string scribanFile = "GenerateComponentCpp.sbn";
-
-			// 実行ファイルと同じディレクトリ内を探す
-			string sourcePath = Path.Combine(AppContext.BaseDirectory, scribanFile);
-			string headerTemplateText = "";
-			try
-			{
-				headerTemplateText = File.ReadAllText(sourcePath, encoding);
-			}
-			catch (Exception ex)
-			{
-				Console.WriteLine($"ファイル書き込みエラー:{ex.GetType().Name},{ex.Message}");
-			}
-			// 生成用のScribanファイルを解析
-			Template headerTemplate = Template.Parse(headerTemplateText);
-
-            // Scribanのテンプレートに変数をバインドする
-            string cppResult = headerTemplate.Render(new
-			{
-				@header_file = reflectedClass.HeaderFile,
-				@class_name = reflectedClass.ClassName,
-				@properties = reflectedClass.Members
-				.Where(m => m.Attributes.Contains("MT_PROPERTY"))
-				.Select(m => new
-				{
-					@name = m.Name,
-					@type_name = m.TypeName
-				})
-				.ToList()
-			});
-			string fileName = $"{reflectedClass.ClassName}.generated.cpp";
-			string filePath = Path.GetFullPath(Path.Combine(projectRoot, reflectedClass.Directory));
-			string generatePath = Path.GetFullPath(Path.Combine(filePath, fileName));
-			Console.WriteLine($"generate:{generatePath}");
-			try
-			{
-                File.WriteAllText(generatePath, cppResult, encoding);
-			}
-			catch (Exception ex)
-			{
-				Console.WriteLine($"ファイル書き込みエラー:{ex.GetType().Name},{ex.Message}");
-			}
-		}
+		
 
 		private List<string> GetAnalysisTargetFile()
 		{
