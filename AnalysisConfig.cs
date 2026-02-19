@@ -11,24 +11,24 @@ namespace ClangTest
 {
     /// <summary>
     /// コードを生成する際の条件を保存するクラス
-    /// 例 : ClassMetadataTypeがMT_COMPONENTで、MemeberMetadataTypeはMT_PROPERTY
-    ///      MetadataOptionsはSerializeの場合はOutputTemplateのSerialize.sbnでコード生成...という感じ
+    /// <para> 例 : ClassMetadataTypeがMT_COMPONENTで、MemeberMetadataTypeがMT_PROPERTY
+    /// MetadataOptionsがSerializeの場合は OutputTemplateのSerialize.sbnでコード生成...という感じ</para>
     /// </summary>
     public class CodeGenerationRule
     {
         /// <summary>
-        /// クラスに割り当てられたメタデータの種類
-        /// 例 : MT_COMPONENT
+        /// <para> クラスに割り当てられたメタデータの種類</para>
+        /// <para> 例 : MT_COMPONENT</para>
         /// </summary>
         public string ClassMetadataType { get; init; } = "";
         /// <summary>
-        /// メンバ変数に割り当てられたメタデータの種類
-        /// 例 : MT_PROPERTY
+        /// <para> メンバ変数に割り当てられたメタデータの種類 </para>
+        /// <para> 例 : MT_PROPERTY </para>
         /// </summary>
         public string MemberMetadataType { get; init; } = "";
         /// <summary>
-        /// メンバ変数のメタデータのオプション
-        /// 例 : MT_PROPERTY(Serialize)のSerialize部分
+        /// <para> メンバ変数のメタデータのオプション </para>
+        /// <para> 例 : MT_PROPERTY(Serialize)のSerialize部分</para>
         /// </summary>
         public string MetadataOptions { get; init; } = "";
         /// <summary>
