@@ -15,6 +15,7 @@ namespace ClangTest
         public string AccessLevel { get; init; } = "";
         public string MetadataType { get; init; } = "";
          public IReadOnlyList<string> MetaOptions { get; init; } = new List<string>();
+        public string NameSpace { get; init; } = "";
     }
 
     public class ReflectedClassInfo

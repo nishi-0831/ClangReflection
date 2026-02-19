@@ -219,7 +219,8 @@ namespace ClangTest
                 IsPrivate = (access == CX_CXXAccessSpecifier.CX_CXXPrivate),
                 AccessLevel = GetAccessLevel(cursor),
                 MetadataType = metadataType,
-                MetaOptions = attrs
+                MetaOptions = attrs,
+                NameSpace = GetNameSpace(cursor)
             };
         }
 
