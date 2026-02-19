@@ -175,14 +175,33 @@ namespace ClangTest
 		private string Render(ref readonly ReflectedClassInfo classInfo,CodeGenerationRule rule)
 		{
 			string result = string.Empty;
-            if (rule.ClassMetadataType != null && rule.ClassMetadataType != classInfo.MetadataType)
+
+			// ruleにメタデータの種類が指定されていない場合はreturnする
+			if (string.IsNullOrEmpty(rule.ClassMetadataType))
+				return result;
+			// ruleに定められたメタデータの種類(例:UPROPERTY)、とクラスのメタデータの種類が一致しているか
+            if (rule.ClassMetadataType != classInfo.MetadataType)
                 return result;
-            string templateFilePath = Path.Combine(_projectRoot, rule.OutputTemplate);
-			if (File.Exists(templateFilePath) == false)
+
+			// テンプレートファイルのパス
+			string templateFilePath = "";
+			// 絶対パスか判定
+            if (Path.IsPathFullyQualified(rule.OutputTemplate))
+			{
+				templateFilePath = rule.OutputTemplate;
+			}
+			else
+			{
+                templateFilePath = Path.Combine(_projectRoot, rule.OutputTemplate);
+            }
+
+			// ファイルが存在するか判定
+            if (File.Exists(templateFilePath) == false)
 				return result;
 
             List<ReflectedMember> members = new();
 
+			// ruleに指定されたメタデータと一致しているメンバ変数を抽出
             members = classInfo.Members.
                 Where(member => member.MetaOptions.Contains(rule.MetadataOptions) || string.IsNullOrEmpty(rule.MetadataOptions)).
                 Where(member => member.MetadataType == rule.MemberMetadataType).ToList();
@@ -190,14 +209,17 @@ namespace ClangTest
             string templateString = "";
             try
             {
+				// テンプレートファイルからテキストを読み込み
                 templateString = File.ReadAllText(templateFilePath);
             }
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"File Read Error:{ex.GetType().Name},{ex.Message}");
             }
+			// テンプレートを作成
             Template template = Template.Parse(templateString);
 
+			// テンプレートにクラスの情報を渡して、ソースを生成
             result = template.Render(new
             {
                 @name_space = classInfo.NameSpace,
