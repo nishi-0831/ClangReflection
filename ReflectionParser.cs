@@ -160,7 +160,8 @@ namespace ClangTest
                 {
                     return CXChildVisitResult.CXChildVisit_Continue;
                 }
-                if (child.kind == CXCursorKind.CXCursor_ClassDecl)
+                // クラス定義の場合のみ情報を生成する
+                if (child.kind == CXCursorKind.CXCursor_ClassDecl && child.IsDefinition)
                 {
                     className = clang.getCursorSpelling(child).ToString();
                     nameSpace = GetTypeNameSpace(child);

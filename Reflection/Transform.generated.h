@@ -11,8 +11,8 @@
 #define MT_COMPONENT_Transform() \
 	struct TransformState \
 	{ \
-			int position_; \
-			Hoge hoge_; \
+			 position_; \
+			string str; \
 	}; \
 	class Transform;\
 	using TransformMemento = ComponentMemento<Transform, TransformState>;
@@ -28,7 +28,7 @@
 	OnPreSave(); \
 		TransformState state; \
 		state.position_ = this->position_; \
-		state.hoge_ = this->hoge_; \
+		state.str = this->str; \
 		return new ComponentMemento<Transform, TransformState>(GetEntityId(), state); \
 	} \
 	\
@@ -36,20 +36,20 @@
 	{ \
 		const TransformState& state = _memento.GetState(); \
 		this->position_ = state.position_; \
-		this->hoge_ = state.hoge_; \
+		this->str = state.str; \
 		OnPostRestore(); \
 	} \
 	\
 	friend struct Transform_Register; \
 	friend void to_json(nlohmann::json& _j,const Transform& _target) \
 	{ \
-		_j["position_"] = JsonConverter::Serialize<int>(_target.position_); \
-		_j["hoge_"] = JsonConverter::Serialize<Hoge>(_target.hoge_); \
+		_j["position_"] = JsonConverter::Serialize<>(_target.position_); \
+		_j["str"] = JsonConverter::Serialize<string>(_target.str); \
 	} \
 	friend void from_json(const nlohmann::json& _j, Transform& _target) \
 	{ \
-		JsonConverter::Deserialize<int>(_target.position_, _j,"position_"); \
-		JsonConverter::Deserialize<Hoge>(_target.hoge_, _j,"hoge_"); \
+		JsonConverter::Deserialize<>(_target.position_, _j,"position_"); \
+		JsonConverter::Deserialize<string>(_target.str, _j,"str"); \
 		_target.OnPostRestore(); \
 	} \
 	static std::string TypeName(){ return "Transform" ;} \
@@ -63,7 +63,7 @@
 		RegisterShowFuncHolder::Set<Transform>([]( Transform* _target, const char* _name) \
 			{ \
 				PropertyDisplayRegistry::Instance().ShowProperty(&_target->position_, "position_"); \
-				PropertyDisplayRegistry::Instance().ShowProperty(&_target->hoge_, "hoge_"); \
+				PropertyDisplayRegistry::Instance().ShowProperty(&_target->str, "str"); \
 			}); \
 		MTImGui::Instance().RegisterComponentViewer<Transform>(); \
 	}

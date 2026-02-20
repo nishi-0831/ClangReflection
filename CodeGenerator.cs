@@ -151,7 +151,8 @@ namespace ClangTest
 		private void Generate(ref readonly ReflectedClassInfo reflectedClass)
 		{
 			List<string> results = new ();
-			
+			if (string.IsNullOrEmpty(reflectedClass.MetadataType))
+				return;
 			foreach(var rule in _config.CodeGenerationRules)
 			{
 				string result = Render(in reflectedClass, rule);
@@ -179,7 +180,7 @@ namespace ClangTest
 			// ruleにメタデータの種類が指定されていない場合はreturnする
 			if (string.IsNullOrEmpty(rule.ClassMetadataType))
 				return result;
-			// ruleに定められたメタデータの種類(例:UPROPERTY)、とクラスのメタデータの種類が一致しているか
+			// ruleに定められたメタデータの種類(例:UCOMPONENT)、とクラスのメタデータの種類が一致しているか
             if (rule.ClassMetadataType != classInfo.MetadataType)
                 return result;
 

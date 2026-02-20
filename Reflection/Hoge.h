@@ -1,7 +1,9 @@
 ﻿
+#include "Transform.h"
 namespace hello
 {
-	class Hoge
+	class Transform;
+	class Hoge : public Transform
 	{
 	public:
 		int piyo;
