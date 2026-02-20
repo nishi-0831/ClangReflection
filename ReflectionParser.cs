@@ -200,10 +200,13 @@ namespace ClangTest
         /// <returns></returns>
         static ReflectedMember GetReflectedMember(CXCursor cursor)
         {
+            
             // 変数名
             string name = clang.getCursorSpelling(cursor).ToString();
-            // 型名
-            string type = clang.getTypeSpelling(clang.getCursorType(cursor)).ToString();
+            // 宣言部分のカーソルを取得
+            CXCursor typeDeclaration = clang.getTypeDeclaration(clang.getCursorType(cursor));
+            // 型名(名前空間を含まない、型の名前のみ)を取得
+            string type  = clang.getCursorSpelling(typeDeclaration).CString;
             // アクセス修飾子
             CX_CXXAccessSpecifier access = clang.getCXXAccessSpecifier(cursor);
 
