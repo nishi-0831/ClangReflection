@@ -204,10 +204,21 @@ namespace ClangTest
             
             // 変数名
             string name = clang.getCursorSpelling(cursor).ToString();
+
+            // 型名(名前空間を含まない、型の名前のみ)
+            string type = string.Empty;
+            CXType cxType = clang.getCursorType(cursor);
             // 宣言部分のカーソルを取得
-            CXCursor typeDeclaration = clang.getTypeDeclaration(clang.getCursorType(cursor));
-            // 型名(名前空間を含まない、型の名前のみ)を取得
-            string type  = clang.getCursorSpelling(typeDeclaration).CString;
+            CXCursor typeDeclaration = clang.getTypeDeclaration(cxType);
+            // 組み込み型の場合、NoDeclFoundが返される
+            if (typeDeclaration.kind == CXCursorKind.CXCursor_NoDeclFound)
+            {
+                type = clang.getTypeSpelling(clang.getCursorType(cursor)).ToString();
+            }
+            else
+            {
+                type  = clang.getCursorSpelling(typeDeclaration).CString;
+            }
             // アクセス修飾子
             CX_CXXAccessSpecifier access = clang.getCXXAccessSpecifier(cursor);
 

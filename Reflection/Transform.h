@@ -1,7 +1,8 @@
 #include "Transform.generated.h"
 #include "Vector3.h"
+#include <string>
 #include <iostream>
-
+#include "Hoge.h"
 #define MT_STRINGIFY(...) #__VA_ARGS__
 #define MT_PROPERTY(...) [[clang::annotate("MT_PROPERTY," MT_STRINGIFY(__VA_ARGS__))]]
 #define MT_FUNCTION(...) [[clang::annotate("MT_FUNCTION," MT_STRINGIFY(__VA_ARGS__))]]
@@ -9,7 +10,8 @@
 #define MT_GENERATED_BODY()
 
 
-
+namespace hello
+{
 	class [[MT_COMPONENT()]] Transform
 	{
 	public:
@@ -18,7 +20,10 @@
 		void OnPostRestore() override;
 	private:
 		MT_PROPERTY()
-		Vector3 position_;
+			Vector3 position_;
 		MT_PROPERTY()
-		std::string str;
+			std::string str;
+		MT_PROPERTY()
+			Hoge hoge_;
 	};
+}
