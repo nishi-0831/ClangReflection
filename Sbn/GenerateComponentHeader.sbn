@@ -8,14 +8,14 @@
 // ============================================================================
 // {{ class_name }}の状態を保存するState構造体の定義、Undo/Redoに使うMementoのusing宣言
 // ============================================================================
-#define MT_COMPONENT_{{ class_name }}() \
-	struct {{ class_name }}State \
-	{ \
+
+	struct {{ class_name }}State 
+	{ 
 		{{- for member in properties}}
-			{{member.type_name }} {{ member.name }}; \
+			{{member.type_name }} {{ member.name }};
 		{{- end }}
-	}; \
-	class {{ class_name }};\
+	}; 
+	class {{ class_name }};
 	using {{ class_name }}Memento = ComponentMemento<{{ class_name }}, {{ class_name }}State>;
 
 // ============================================================================

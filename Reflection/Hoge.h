@@ -1,7 +1,10 @@
 ﻿
-class Hoge
+namespace hello
 {
-public:
-	int piyo;
-	float fuga;
-};
+	class Hoge 
+	{
+	public:
+		int piyo;
+		float fuga;
+	};
+}

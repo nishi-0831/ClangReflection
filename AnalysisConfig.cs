@@ -9,14 +9,37 @@ using YamlDotNet.Serialization.NamingConventions;
 
 namespace ClangTest
 {
+    /// <summary>
+    /// コードを生成する際の条件を保存するクラス
+    /// <para> 例 : ClassMetadataTypeがMT_COMPONENTで、MemeberMetadataTypeがMT_PROPERTY
+    /// MetadataOptionsがSerializeの場合は OutputTemplateのSerialize.sbnでコード生成...という感じ</para>
+    /// </summary>
     public class CodeGenerationRule
     {
-        public string? ClassMetadataType {  get; set; }
-        public string? MemberMetadataType { get; set; }
-        public string MetadataOptions { get; set; } = "";
-        public string OutputTemplate { get; set; } = "";
+        /// <summary>
+        /// <para> クラスに割り当てられたメタデータの種類</para>
+        /// <para> 例 : MT_COMPONENT</para>
+        /// </summary>
+        public string ClassMetadataType { get; init; } = "";
+        /// <summary>
+        /// <para> メンバ変数に割り当てられたメタデータの種類 </para>
+        /// <para> 例 : MT_PROPERTY </para>
+        /// </summary>
+        public string MemberMetadataType { get; init; } = "";
+        /// <summary>
+        /// <para> メンバ変数のメタデータのオプション </para>
+        /// <para> 例 : MT_PROPERTY(Serialize)のSerialize部分</para>
+        /// </summary>
+        public string MetadataOptions { get; init; } = "";
+        /// <summary>
+        /// コード生成に利用するテンプレートファイル
+        /// Scribanを使う
+        /// </summary>
+        public string OutputTemplate { get; init; } = "";
     }
-
+    /// <summary>
+    /// コード解析、生成する際の設定を保持するクラス
+    /// </summary>
     public class AnalysisConfig
     {
         // 解析対象から除外するディレクトリ
@@ -25,6 +48,12 @@ namespace ClangTest
         // スレッド数
         public int? MaxDegreeOfParallelism;
         public CodeGenerationRule[] CodeGenerationRules { get; set; } = Array.Empty<CodeGenerationRule>();
+        /// <summary>
+        /// プロジェクトのルートディレクトリから設定ファイルを読み取る
+        /// ".clangref.yaml"というファイル名にする必要がある
+        /// </summary>
+        /// <param name="projectRoot">解析対象のプロジェクトのルートディレクトリ</param>
+        /// <returns></returns>
         public static AnalysisConfig LoadFromProjectRoot(string projectRoot)
         {
             string yamlPath = Path.Combine(projectRoot, ".clangref.yaml");

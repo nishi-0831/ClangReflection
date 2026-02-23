@@ -160,10 +160,11 @@ namespace ClangTest
                 {
                     return CXChildVisitResult.CXChildVisit_Continue;
                 }
-                if (child.kind == CXCursorKind.CXCursor_ClassDecl)
+                // クラス定義の場合のみ情報を生成する
+                if (child.kind == CXCursorKind.CXCursor_ClassDecl && child.IsDefinition)
                 {
                     className = clang.getCursorSpelling(child).ToString();
-                    nameSpace = GetNameSpace(child);
+                    nameSpace = GetTypeNameSpace(child);
                     classAnnotations = GetAnnotations(child);
                     foreach (string anno in classAnnotations)
                     {
@@ -193,20 +194,41 @@ namespace ClangTest
             };
             return reflectedClass;
         }
+        /// <summary>
+        /// メンバ変数の型情報を取得
+        /// </summary>
+        /// <param name="cursor">メンバ変数のカーソル</param>
+        /// <returns></returns>
         static ReflectedMember GetReflectedMember(CXCursor cursor)
         {
+            
             // 変数名
             string name = clang.getCursorSpelling(cursor).ToString();
-            // 型名
-            string type = clang.getTypeSpelling(clang.getCursorType(cursor)).ToString();
+
+            // 型名(名前空間を含まない、型の名前のみ)
+            string type = string.Empty;
+            CXType cxType = clang.getCursorType(cursor);
+            // 宣言部分のカーソルを取得
+            CXCursor typeDeclaration = clang.getTypeDeclaration(cxType);
+            // 組み込み型の場合、NoDeclFoundが返される
+            if (typeDeclaration.kind == CXCursorKind.CXCursor_NoDeclFound)
+            {
+                type = clang.getTypeSpelling(clang.getCursorType(cursor)).ToString();
+            }
+            else
+            {
+                type  = clang.getCursorSpelling(typeDeclaration).CString;
+            }
             // アクセス修飾子
             CX_CXXAccessSpecifier access = clang.getCXXAccessSpecifier(cursor);
 
+            // アノテーションを取得
             List<string> fieldAnnotations = GetAnnotations(cursor);
             List<string> attrs = new();
             string metadataType = "";
             foreach (string anno in fieldAnnotations)
             {
+                // アノテーションに付与されたメタデータを取得
                 var (macroName, args) = ParseAnnotation(anno);
                 metadataType = macroName;
                 attrs.AddRange(args);
@@ -219,7 +241,8 @@ namespace ClangTest
                 IsPrivate = (access == CX_CXXAccessSpecifier.CX_CXXPrivate),
                 AccessLevel = GetAccessLevel(cursor),
                 MetadataType = metadataType,
-                MetaOptions = attrs
+                MetaOptions = attrs,
+                NameSpace = GetMemberNameSpace(cursor)
             };
         }
 
@@ -306,8 +329,14 @@ namespace ClangTest
             }
             return includePath;
         }
-      
-        static string GetNameSpace(CXCursor cursor)
+
+        /// <summary>
+        /// 型のカーソルから、名前空間を取得
+        /// 名前空間がない場合は空文字
+        /// </summary>
+        /// <param name="cursor">型(ClassDecl)のカーソル</param>
+        /// <returns></returns>
+        static string GetTypeNameSpace(CXCursor cursor)
         {
             CXCursor parent = cursor.SemanticParent;
             if (parent.kind == CXCursorKind.CXCursor_Namespace)
@@ -315,6 +344,22 @@ namespace ClangTest
                 return parent.Spelling.ToString();
             }
             return "";
+        }
+
+        /// <summary>
+        /// メンバ変数のカーソルから、名前空間を取得
+        /// 名前空間がない場合は空文字
+        /// </summary>
+        /// <param name="cursor">メンバ変数(FieldDecl)のカーソル</param>
+        /// <returns></returns>
+        static string GetMemberNameSpace(CXCursor cursor)
+        {
+            // メンバ変数のカーソルから型(CXType)を取得
+            CXType type = clang.getCursorType(cursor);
+            // 型の宣言のカーソルを取得
+            CXCursor typeDeclaration =  type.Declaration;
+
+            return GetTypeNameSpace(typeDeclaration);
         }
         /// <summary>
         /// アクセス修飾子を返す
