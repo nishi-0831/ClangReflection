@@ -8,15 +8,36 @@
 // ============================================================================
 // {{ class_name }}の状態を保存するState構造体の定義、Undo/Redoに使うMementoのusing宣言
 // ============================================================================
-
-	struct {{ class_name }}State 
-	{ 
-		{{- for member in properties}}
-			{{member.type_name }} {{ member.name }};
+struct {{ class_name }}State
+{
+	{{- for member in properties}}
+		{{- if member.name_space == ""}}
+			{{ member.type_name }} {{ member.name }};
+		{{- else }}
+			{{ member.name_space }}::{{ member.type_name }} {{ member.name }};
 		{{- end }}
-	}; 
+	{{- end }}
+};
+
+// クラスの前方宣言
+{{- if name_space == "" }}
 	class {{ class_name }};
-	using {{ class_name }}Memento = ComponentMemento<{{ class_name }}, {{ class_name }}State>;
+{{- else }}
+	namespace {{ name_space }}
+	{{ "{" }}
+		class {{ class_name }};
+	{{ "}" }}
+{{- end}}
+
+{{ # 名前空間付きの完全名 }}
+{{ fully_qualified_name = "" }}
+{{- if name_space == "" }}
+	{{ fully_qualified_name = $"{ class_name }" }}
+{{- else }}
+	{{ fully_qualified_name = $"{name_space}::{ class_name }" }}
+{{- end }}
+
+using {{ class_name }}Memento = mtgb::ComponentMemento<{{ fully_qualified_name }}, {{ class_name }}State>;
 
 // ============================================================================
 // {{ class_name }}と{{ class_name }}Mementoの相互変換処理を実装
@@ -31,10 +52,10 @@
 {{- for member in properties }}
 		state.{{ member.name }} = this->{{ member.name }}; \
 {{- end }}
-		return new ComponentMemento<{{ class_name }}, {{ class_name }}State>(GetEntityId(), state); \
+		return new Memento(GetEntityId(), state); \
 	} \
 	\
-	void RestoreFromMemento(const ComponentMemento<{{ class_name }}, {{ class_name }}State>& _memento) \
+	void RestoreFromMemento(const Memento& _memento) \
 	{ \
 		const {{ class_name }}State& state = _memento.GetState(); \
 {{- for member in properties }}
@@ -77,6 +98,5 @@
 #pragma warning(push)
 #pragma warning(disable:4005)
 // マクロ上書き
-#define MT_COMPONENT() MT_COMPONENT_{{ class_name }}()
 #define MT_GENERATED_BODY() MT_GENERATED_BODY_{{ class_name }}()
 #pragma warning(pop)

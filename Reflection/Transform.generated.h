@@ -1,56 +1,82 @@
 // Transform.generated.h
 #pragma once
 
-// DTO構造体
-struct TransformDTO
-{
-	int position_;
-	Hoge hoge_;
-};
+#include <nlohmann/json.hpp>
+#include "JsonConverter.h"
+#include "MTImGui.h"
+#include <string>
+// ============================================================================
+// Transformの状態を保存するState構造体の定義、Undo/Redoに使うMementoのusing宣言
+// ============================================================================
+#define MT_COMPONENT_Transform() \
+	struct TransformState \
+	{ \
+			int position_; \
+			string str; \
+			Hoge hoge_; \
+	}; \
+	class Transform;\
+	using TransformMemento = ComponentMemento<Transform, TransformState>;
 
-// マクロ展開部分... 
+// ============================================================================
+// TransformとTransformMementoの相互変換処理を実装
+// ============================================================================
 #define MT_GENERATED_BODY_Transform() \
 	public: \
-	using DTO = TransformDTO; \
-	\
-	IMemento* SaveToMemento() \
+	using Memento = TransformMemento; \
+	TransformMemento* SaveToMemento() \
 	{ \
-		TransformDTO dto; \
-		dto.position_ = this->position_; \
-		dto.hoge_ = this->hoge_; \
-		return new ComponentMemento<Transform, TransformDTO>(GetEntityId(), dto); \
+	OnPreSave(); \
+		TransformState state; \
+		state.position_ = this->position_; \
+		state.str = this->str; \
+		state.hoge_ = this->hoge_; \
+		return new ComponentMemento<Transform, TransformState>(GetEntityId(), state); \
 	} \
 	\
-	void RestoreFromMemento(const ComponentMemento<Transform, TransformDTO>& _memento) \
+	void RestoreFromMemento(const ComponentMemento<Transform, TransformState>& _memento) \
 	{ \
-		const TransformDTO& dto = _memento.GetDTO(); \
-		this->position_ = dto.position_; \
-		this->hoge_ = dto.hoge_; \
+		const TransformState& state = _memento.GetState(); \
+		this->position_ = state.position_; \
+		this->str = state.str; \
+		this->hoge_ = state.hoge_; \
 		OnPostRestore(); \
 	} \
 	\
-	friend struct Transform_Register;
-
-// JSONシリアライズ定義
-NLOHMANN_DEFINE_TYPE_INTRUSIVE(Transform, position_, hoge_)
-
-// Memento型定義
-using TransformMemento = ComponentMemento<Transform, TransformDTO>;
-
-// ImGui表示処理登録
-struct Transform_Register
-{
-	Transform_Register()
-	{
-		RegisterShowFuncHolder::Set<Transform>([](Transform* _target, const char* _name)
-		{
-			TypeRegistry::Instance().CallFunc(&_target->position_, "position_");
-			TypeRegistry::Instance().CallFunc(&_target->hoge_, "hoge_");
-		});
+	friend struct Transform_Register; \
+	friend void to_json(nlohmann::json& _j,const Transform& _target) \
+	{ \
+		_j["position_"] = JsonConverter::Serialize<int>(_target.position_); \
+		_j["str"] = JsonConverter::Serialize<string>(_target.str); \
+		_j["hoge_"] = JsonConverter::Serialize<Hoge>(_target.hoge_); \
+	} \
+	friend void from_json(const nlohmann::json& _j, Transform& _target) \
+	{ \
+		JsonConverter::Deserialize<int>(_target.position_, _j,"position_"); \
+		JsonConverter::Deserialize<string>(_target.str, _j,"str"); \
+		JsonConverter::Deserialize<Hoge>(_target.hoge_, _j,"hoge_"); \
+		_target.OnPostRestore(); \
+	} \
+	static std::string TypeName(){ return "Transform" ;} \
+	/* ImGui表示処理の登録 */ \
+	static void RegisterImGui() \
+	{ \
+		static bool registered = false; \
+		if (registered) return; \
+		registered = true; \
+		\
+		RegisterShowFuncHolder::Set<Transform>([]( Transform* _target, const char* _name) \
+			{ \
+				PropertyDisplayRegistry::Instance().ShowProperty(&_target->position_, "position_"); \
+				PropertyDisplayRegistry::Instance().ShowProperty(&_target->str, "str"); \
+				PropertyDisplayRegistry::Instance().ShowProperty(&_target->hoge_, "hoge_"); \
+			}); \
+		MTImGui::Instance().RegisterComponentViewer<Transform>(); \
 	}
-};
 
-static Transform_Register transform_register;
-
+#pragma warning(push)
+#pragma warning(disable:4005)
 // マクロ上書き
+#define MT_COMPONENT() MT_COMPONENT_Transform()
 #define MT_GENERATED_BODY() MT_GENERATED_BODY_Transform()
+#pragma warning(pop)

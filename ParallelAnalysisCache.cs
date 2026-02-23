@@ -10,9 +10,9 @@ namespace ClangTest
 {
     public class ParallelAnalysisCache
     {
-        private Dictionary<string, CacheEntry> memoryCache;
-        private readonly string cacheFilePath;
-        private readonly object lockObj = new();
+        private Dictionary<string, CacheEntry> _memoryCache;
+        private readonly string _cacheFilePath;
+        private readonly object _lockObj = new();
 
         public class CacheEntry
         {
@@ -22,8 +22,8 @@ namespace ClangTest
 
         public ParallelAnalysisCache(string cacheFile)
         {
-            this.cacheFilePath = cacheFile;
-            this.memoryCache = new();
+            this._cacheFilePath = cacheFile;
+            this._memoryCache = new();
             LoadCacheFromDisk();
         }
 
@@ -32,22 +32,26 @@ namespace ClangTest
         /// </summary>
         private void LoadCacheFromDisk()
         {
-            lock (lockObj)
+            lock (_lockObj)
             {
-                if (File.Exists(cacheFilePath))
+                if (File.Exists(_cacheFilePath))
                 {
                     try
                     {
                         // JSONを読み込む
-                        string json = File.ReadAllText(cacheFilePath);
+                        string json = File.ReadAllText(_cacheFilePath);
                         // 辞書に変換
-                        memoryCache = JsonConvert.DeserializeObject<Dictionary<string, CacheEntry>>(json) ?? new();
-                        Console.WriteLine($"[Cache] Loaded {memoryCache.Count} entries from disk");
+                        _memoryCache = JsonConvert.DeserializeObject<Dictionary<string, CacheEntry>>(json) ?? new();
+                        Console.WriteLine($"[Cache] Loaded {_memoryCache.Count} entries from disk");
                     }
                     catch (Exception ex)
                     {
                         Console.Error.WriteLine($"[Cache Error] Failed to load:{ex.Message}");
                     }
+                }
+                else
+                {
+                    Console.Error.WriteLine($"[Cache] not found {_cacheFilePath}");
                 }
             }
         }
@@ -57,14 +61,14 @@ namespace ClangTest
         /// </summary>
         public void SaveCacheToDisk()
         {
-            lock (lockObj)
+            lock (_lockObj)
             {
                 try
                 {
                     // JSONとして書き込み
-                    string json = JsonConvert.SerializeObject(memoryCache, Formatting.Indented);
-                    File.WriteAllText(cacheFilePath, json);
-                    Console.Error.WriteLine($"[Cache] Success to save: {cacheFilePath}");
+                    string json = JsonConvert.SerializeObject(_memoryCache, Formatting.Indented);
+                    File.WriteAllText(_cacheFilePath, json);
+                    Console.Error.WriteLine($"[Cache] Success to save: {_cacheFilePath}");
                 }
                 catch (Exception ex)
                 {
@@ -131,9 +135,9 @@ namespace ClangTest
             {
                 var currentHash = XxHashComputer.ComputeHash(filePath);
 
-                lock (lockObj)
+                lock (_lockObj)
                 {
-                    if (memoryCache.TryGetValue(filePath, out CacheEntry? entry) == false)
+                    if (_memoryCache.TryGetValue(filePath, out CacheEntry? entry) == false)
                     {
                         // キャッシュにない
                         return true;
@@ -182,10 +186,10 @@ namespace ClangTest
             {
                 string hash = XxHashComputer.ComputeHash(filePath);
 
-                lock (lockObj)
+                lock (_lockObj)
                 {
                     // ハッシュとその時の時間を保存
-                    memoryCache[filePath] = new CacheEntry
+                    _memoryCache[filePath] = new CacheEntry
                     {
                         FileHash = hash,
                         LastAnalyzed = DateTime.UtcNow
@@ -224,13 +228,13 @@ namespace ClangTest
         /// </summary>
         public void Clear()
         {
-            lock (lockObj)
+            lock (_lockObj)
             {
-                memoryCache.Clear();
+                _memoryCache.Clear();
             }
-            if (File.Exists(cacheFilePath))
+            if (File.Exists(_cacheFilePath))
             {
-                File.Delete(cacheFilePath);
+                File.Delete(_cacheFilePath);
             }
             Console.WriteLine("[Cache] Cleared");
         }

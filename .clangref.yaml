@@ -4,3 +4,7 @@ ExcludeDirectories:
   - "ImGui" 
   - "packages" 
 MaxDegreeOfParallelism: 4
+CodeGenerationRules:
+  -  ClassMetadataType: "MT_COMPONENT"
+     MemberMetadataType: "MT_PROPERTY"
+     OutputTemplate: "GenerateComponentHeader.sbn"
