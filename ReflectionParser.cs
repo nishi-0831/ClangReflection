@@ -76,7 +76,7 @@ namespace ClangTest
 
             _disposed = true;
         }
-        public ReflectedClassInfo? Parse(string filePath)
+        public ReflectedClass? Parse(string filePath)
         {
             // 絶対パスでファイルの存在を確認する
             if (!File.Exists(filePath))
@@ -105,7 +105,7 @@ namespace ClangTest
         /// <param name="filePath"></param>
         /// <param name="reflectedClass"></param>
         /// <returns>解析に成功した場合はtrue、失敗した場合、ファイルが見つからなかった場合はfalseを返す</returns>
-        private ReflectedClassInfo? ParseImpl(string filePath)
+        private ReflectedClass? ParseImpl(string filePath)
         {            
             
             CXTranslationUnit trans = new CXTranslationUnit();
@@ -142,7 +142,7 @@ namespace ClangTest
             }
             return null;
         }
-        private unsafe  ReflectedClassInfo GetReflectedClass(CXTranslationUnit trans)
+        private unsafe  ReflectedClass GetReflectedClass(CXTranslationUnit trans)
         {
             CXCursor cursor = trans.Cursor;
             List<string> classAnnotations = new();
@@ -183,7 +183,7 @@ namespace ClangTest
             }, new CXClientData());
 
             // 解析結果を代入
-            ReflectedClassInfo reflectedClass = new ReflectedClassInfo
+            ReflectedClass reflectedClass = new ReflectedClass
             {
                 ClassName = className,
                 NameSpace = nameSpace,

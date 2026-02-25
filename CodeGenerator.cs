@@ -14,25 +14,6 @@ using System.Threading.Tasks;
 
 namespace ClangTest
 {
-	public readonly struct GenerateTargetInfo
-	{
-		public string NameSpace { get; }
-		public string ClassName { get; }
-		public string Directory { get; }
-		public GenerateTargetInfo(string nameSpace,string className,string directory)
-		{
-			this.NameSpace = nameSpace;
-			this.ClassName = className;
-			this.Directory = directory;
-		}
-		public GenerateTargetInfo(ref readonly ReflectedClassInfo reflectedClass)
-		{
-			this.NameSpace= reflectedClass.NameSpace;
-			this.ClassName = reflectedClass.ClassName;
-			this.Directory = reflectedClass.Directory;
-		}
-    }
-
 	public class CodeGenerator
 	{
 		private string _projectRoot = "";
@@ -69,7 +50,7 @@ namespace ClangTest
 			object lockObj = new();
 
 			// ヘッダファイルの数、生成をスキップした数、生成した数。コンソールに表示する
-			int headerCount = 0, skipped = 0, regenerated = 0, failureCount = 0;
+			int headerCount = 0, skipped = 0, generated = 0, failureCount = 0;
 
 			// ファイルを取得
 			var headerFiles = GetAnalysisTargetFile();
@@ -102,33 +83,37 @@ namespace ClangTest
 				{
 					string relative = Path.GetRelativePath(_projectRoot, headerFile);
 
-                    ReflectedClassInfo? reflectedClass = _reflectionParser.Parse(headerFile);
+                    Console.WriteLine($"[Gen] parse {relative}");
+					// ヘッダを解析
+                    ReflectedClass? reflectedClass = _reflectionParser.Parse(headerFile);
+					bool success = false;
 					if (reflectedClass != null)
 					{
-						Generate(in reflectedClass);
+						// ソースコードの生成を試みる
+						success = Generate(in reflectedClass);
 					}
 					lock (lockObj)
 					{
-						// TODO: Generateで実際に生成されるとは限らないため、
-						// この条件式でカウントするのは間違い。Loggerを用意して詳細にチェックすべし
-						if(reflectedClass != null)
+						if(success)
 						{
-                            regenerated++;
-                            Console.WriteLine($"[Gen] {relative}");
+							// 生成に成功
+                            generated++;
                         }
                         else
 						{
+							// 生成を行わなかった
                             skipped++;
-                            Console.WriteLine($"[Skipped] {relative}");
+                            Console.WriteLine($"[Gen] skipped {relative}");
                         }
                     }
+					// ヘッダファイルをキャッシュ
 					_cache.UpdateCache(headerFile);
 				}
 				catch (Exception ex)
 				{
 					lock (lockObj)
 					{
-                        Console.Error.WriteLine($"[Error] {Path.GetFileName(headerFile)}: {ex.Message}");
+                        Console.Error.WriteLine($"[Gen] error {Path.GetFileName(headerFile)}: {ex.Message}");
                         failureCount++;
                     }
 				}
@@ -143,37 +128,66 @@ namespace ClangTest
 			// 結果を表示
 			Console.WriteLine();
 			Console.WriteLine($"[Gen] Complete in {stopwatch.ElapsedMilliseconds} ms");
-			Console.WriteLine($"[Gen] Regenerated: {regenerated}, Skipped: {skipped}, Failure: {failureCount}");
+			Console.WriteLine($"[Gen] Generated: {generated}, Skipped: {skipped}, Failure: {failureCount}");
 
 			(_reflectionParser as IDisposable)?.Dispose();
 		}
 		
-		private void Generate(ref readonly ReflectedClassInfo reflectedClass)
+		/// <summary>
+		/// 解析したクラス情報に基づいて、設定済みのコード生成ルールからソースコードを生成する
+		/// </summary>
+		/// <remarks>
+		/// <list type="bullet">
+		/// <item><description>クラスにメタデータが設定されていない場合はスキップ</description>></item>
+		/// <item><description>生成されたコードは、元のヘッダファイルと同じディレクトリに<c>{ClassName}.generated.h</c>として出力される</description>></item>
+		/// </list>
+		/// </remarks>
+		/// <param name="reflectedClass">解析済みのクラス情報</param>
+		/// <returns>一つ以上のファイル生成に成功した場合は<c>true</c>、すべてスキップまたは失敗した場合は<c>false</c></returns>
+		private bool Generate(ref readonly ReflectedClass reflectedClass)
 		{
-			List<string> results = new ();
+			bool result = false;
+			// MetadaTypeが空の場合はスキップ
 			if (string.IsNullOrEmpty(reflectedClass.MetadataType))
-				return;
+				return result;
+
 			foreach(var rule in _config.CodeGenerationRules)
 			{
-				string result = Render(in reflectedClass, rule);
-				if (string.IsNullOrEmpty(result))
+				// コード生成ルールをもとに、生成された文字列
+				string renderedText = Render(in reflectedClass, rule);
+
+				// 空の場合は生成を行っていないので、continue
+				if (string.IsNullOrEmpty(renderedText))
 					continue;
+
+				// 生成した文字列を書き込んでいく
 				string fileName = $"{reflectedClass.ClassName}.generated.h";
 				string filePath = Path.GetFullPath(Path.Combine(_projectRoot, reflectedClass.Directory));
 				string generateFile = Path.GetFullPath(Path.Combine(filePath, fileName));
 				try
 				{
-					File.WriteAllText(generateFile, result, _encoding);
-					Console.WriteLine($"generate:{generateFile}");
+					File.WriteAllText(generateFile, renderedText, _encoding);
+					Console.WriteLine($"[Gen] generate:{generateFile}");
+					result = true;
 				}
 				catch (Exception ex)
 				{
-					Console.Error.WriteLine($"File Write Error:{ex.GetType().Name},{ex.Message}");
+					Console.Error.WriteLine($"[Gen] File Write Error:{ex.GetType().Name},{ex.Message}");
 				}
 			}
+			return result;
         }
-		
-		private string Render(ref readonly ReflectedClassInfo classInfo,CodeGenerationRule rule)
+
+        /// <summary>
+        /// 指定されたコード生成ルールに基づいて、Scribanテンプレートで文字列をレンダリングする。
+        /// </summary>
+		/// <remarks>
+		/// ファイル読み込みの例外が発生しても、スローせずに空文字を返す
+		/// </remarks>
+        /// <param name="reflectedClass">解析済みのクラス情報</param>
+        /// <param name="rule">適用するコード生成ルール</param>
+        /// <returns>レンダリング結果の文字列。レンダリングが行われなかった場合、空文字列を返す</returns>
+        private string Render(ref readonly ReflectedClass reflectedClass,CodeGenerationRule rule)
 		{
 			string result = string.Empty;
 
@@ -181,7 +195,7 @@ namespace ClangTest
 			if (string.IsNullOrEmpty(rule.ClassMetadataType))
 				return result;
 			// ruleに定められたメタデータの種類(例:UCOMPONENT)、とクラスのメタデータの種類が一致しているか
-            if (rule.ClassMetadataType != classInfo.MetadataType)
+            if (rule.ClassMetadataType != reflectedClass.MetadataType)
                 return result;
 
 			// テンプレートファイルのパス
@@ -203,7 +217,7 @@ namespace ClangTest
             List<ReflectedMember> members = new();
 
 			// ruleに指定されたメタデータと一致しているメンバ変数を抽出
-            members = classInfo.Members.
+            members = reflectedClass.Members.
                 Where(member => member.MetaOptions.Contains(rule.MetadataOptions) || string.IsNullOrEmpty(rule.MetadataOptions)).
                 Where(member => member.MetadataType == rule.MemberMetadataType).ToList();
 
@@ -223,13 +237,16 @@ namespace ClangTest
 			// テンプレートにクラスの情報を渡して、ソースを生成
             result = template.Render(new
             {
-                @name_space = classInfo.NameSpace,
-                @class_name = classInfo.ClassName,
+                @name_space = reflectedClass.NameSpace,
+                @class_name = reflectedClass.ClassName,
                 @properties = members
             });
 			return result;
         }
-		
+        /// <summary>
+        /// 解析対象のファイル群を取得
+        /// </summary>
+        /// <returns>/// 解析対象のファイル群</returns>
         private List<string> GetAnalysisTargetFile()
 		{
             // ファイルを取得
@@ -269,7 +286,13 @@ namespace ClangTest
 
 			return headerFiles;
 		}
-        bool ContainsExcludePath(string excludePath,string filePath)
+		/// <summary>
+		/// ファイルのパスが、解析から除外する対象か否かを返す。
+		/// </summary>
+		/// <param name="excludePath">除外パス</param>
+		/// <param name="filePath">ファイルのパス</param>
+		/// <returns>除外対象の場合は<c>true</c>を返す</returns>
+        static bool ContainsExcludePath(string excludePath,string filePath)
         {
 			// 絶対パスに正規化し、区切り文字を統一、除外パスには末尾区切りを付ける
             var fileFullPath = Path.GetFullPath(filePath);

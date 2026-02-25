@@ -44,7 +44,7 @@ namespace ClangTest
     /// <summary>
     /// 解析したクラスの情報を保存するクラス
     /// </summary>
-    public class ReflectedClassInfo
+    public class ReflectedClass
     {
         /// <summary>
         /// 型名
