@@ -1,18 +1,6 @@
-using ClangSharp;
 using ClangSharp.Interop;
-using System;
-using System.Collections;
-using System.Collections.Generic;
-using System.IO.Enumeration;
-using System.Linq;
-using System.Reflection;
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using System.Security.Cryptography.X509Certificates;
-using System.Text;
-using System.Text.RegularExpressions;
-using System.Threading.Tasks;
-using YamlDotNet.Core;
+
 namespace ClangTest
 {
     class ReflectionParser : IDisposable
@@ -23,12 +11,10 @@ namespace ClangTest
             string? libclangPath = Path.Combine(AppContext.BaseDirectory, "libclang.dll");
             if (libclangPath == null)
             {
-                throw new Exception("libclang.dll not found!!!!!!");
+                throw new Exception("[Parser] Error: libclang.dll not found!");
             }
             _libclangHandle = NativeLibrary.Load(libclangPath);
             _projectDir = projDir.Trim();
-
-            _index = CXIndex.Create();
 
             int parallelism = maxParallelism > 0 ? maxParallelism : Environment.ProcessorCount;
             // initialCount: 初期の解析数 , maxCount: 最大解析数
@@ -41,8 +27,6 @@ namespace ClangTest
         }
         private bool _disposed;
         private IntPtr _libclangHandle = IntPtr.Zero;
-        // 翻訳単位を管理するやつ。解析の開始点となる
-        private readonly CXIndex _index;
         protected List<string> _namespace = new List<string>();
         protected String _namespaceStr = "";
         protected static string _projectDir = "";
@@ -67,7 +51,6 @@ namespace ClangTest
             }
 
             // アンマネージド(unmanaged)・リソースの解放処理
-            _index.Dispose();
             if(_libclangHandle != IntPtr.Zero)
             {
                 NativeLibrary.Free(_libclangHandle);
@@ -81,7 +64,7 @@ namespace ClangTest
             // 絶対パスでファイルの存在を確認する
             if (!File.Exists(filePath))
             {
-                Console.Error.WriteLine($"{filePath} not found");
+                Console.Error.WriteLine($"[Parser] Error: {filePath} not found");
                 return null;
             }
 
@@ -126,7 +109,7 @@ namespace ClangTest
                 if (err != CXErrorCode.CXError_Success)
                 {
                     // 解析失敗
-                    Console.Error.WriteLine($"Parse failed: {err}");
+                    Console.Error.WriteLine($"[Parser] Error: Parse failed: {err}");
                     return null;
                 }
                 // 解析結果を代入
@@ -134,7 +117,7 @@ namespace ClangTest
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"Parse failed: {ex.Message}");
+                Console.Error.WriteLine($"[Parser] Error: Parse failed: {ex.Message}");
             }
             finally
             {
@@ -268,7 +251,7 @@ namespace ClangTest
             // キャスト失敗
             if (holder == null)
             {
-                Console.Error.WriteLine("handle.target is null");
+                Console.Error.WriteLine("[Parser] Error: handle.target is null");
                 return;
             }
 

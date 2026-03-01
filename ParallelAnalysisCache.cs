@@ -1,10 +1,5 @@
 ﻿using Newtonsoft.Json;
-using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace ClangTest
 {
@@ -34,24 +29,24 @@ namespace ClangTest
         {
             lock (_lockObj)
             {
-                if (File.Exists(_cacheFilePath))
+                try
                 {
-                    try
+                    if (File.Exists(_cacheFilePath))
                     {
-                        // JSONを読み込む
+                        // ファイルを読み込む
                         string json = File.ReadAllText(_cacheFilePath);
-                        // 辞書に変換
+                        // キャッシュ読み込み
                         _memoryCache = JsonConvert.DeserializeObject<Dictionary<string, CacheEntry>>(json) ?? new();
                         Console.WriteLine($"[Cache] Loaded {_memoryCache.Count} entries from disk");
                     }
-                    catch (Exception ex)
+                    else
                     {
-                        Console.Error.WriteLine($"[Cache Error] Failed to load:{ex.Message}");
+                        Console.WriteLine($"[Cache] Not found cache file in {_cacheFilePath}");
                     }
                 }
-                else
+                catch (Exception ex)
                 {
-                    Console.Error.WriteLine($"[Cache] not found {_cacheFilePath}");
+                    Console.Error.WriteLine($"[Cache] Error: failed to load:{ex.Message}");
                 }
             }
         }
@@ -68,11 +63,11 @@ namespace ClangTest
                     // JSONとして書き込み
                     string json = JsonConvert.SerializeObject(_memoryCache, Formatting.Indented);
                     File.WriteAllText(_cacheFilePath, json);
-                    Console.Error.WriteLine($"[Cache] Success to save: {_cacheFilePath}");
+                    Console.WriteLine($"[Cache] Success to save: {_cacheFilePath}");
                 }
                 catch (Exception ex)
                 {
-                    Console.Error.WriteLine($"[Cache Error] Failed to save: {ex.Message}");
+                    Console.Error.WriteLine($"[Cache] Error: failed to save {ex.Message}");
                 }
             }
         }
@@ -157,7 +152,7 @@ namespace ClangTest
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"[Hash Error] {filePath}: {ex.Message}");
+                Console.Error.WriteLine($"[Cache] Hash Error {filePath}: {ex.Message}");
                 // エラー時は再生成
                 return true;
             }
@@ -198,7 +193,7 @@ namespace ClangTest
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"Cache Update Error {filePath}: {ex.Message}");
+                Console.Error.WriteLine($"[Cache] Cache Update Error {filePath}: {ex.Message}");
             }
         }
 
@@ -220,7 +215,7 @@ namespace ClangTest
 
             // 時間計測終了
             stopwatch.Stop();
-            Console.WriteLine($"Cache Updated {count} entries in {stopwatch.ElapsedMilliseconds} ms");
+            Console.WriteLine($"[Cache] Updated {count} entries in {stopwatch.ElapsedMilliseconds} ms");
         }
 
         /// <summary>
