@@ -254,28 +254,13 @@ namespace ClangTest
 
 			if (_config.ExcludeDirectories != null && _config.ExcludeDirectories.Length > 0)
 			{
-				// 除外するディレクトリを絶対パスで取得
-				var absoluteExcludes = _config.ExcludeDirectories
-					.Where(s => string.IsNullOrWhiteSpace(s) == false)
-                    .Select(s =>
-                    {
-                        // 相対パスの場合はプロジェクトのルートと結合。絶対パスならそのまま
-                        string p = Path.IsPathRooted(s) ? s : Path.GetFullPath(Path.Combine(_projectRoot, s));
-                        // 終端に"\"(バックスラッシュ)が付いていない場合は、付ける
-                        if (p.EndsWith(Path.DirectorySeparatorChar) == false)
-                        {
-                            p = p + Path.DirectorySeparatorChar;
-                        }
-                        return p;
-                    }).ToArray();
-
+                // 解析対象外のファイルを除外する
 				headerFiles = headerFiles.Where(file =>
 				{
-					foreach (var excludePath in absoluteExcludes)
+					foreach (var excludeDir in _config.ExcludeDirectories)
 					{
-						if(ContainsExcludePath(excludePath,file))
+						if(ContainsExcludePath(excludeDir,file))
 						{
-							// 除外するディレクトリにある場合は解析しない
 							return false;
 						}
 					}
@@ -287,29 +272,25 @@ namespace ClangTest
 			return headerFiles;
 		}
 		/// <summary>
-		/// ファイルのパスが、解析から除外する対象か否かを返す。
+		/// ファイルのパスが、解析から除外する対象か否かを返す
 		/// </summary>
 		/// <param name="excludePath">除外パス</param>
 		/// <param name="filePath">ファイルのパス</param>
-		/// <returns>除外対象の場合は<c>true</c>を返す</returns>
+		/// <returns>除外対象の場合、またはファイルのディレクトリが取得できなかった場合は<c>true</c>を返す</returns>
         static bool ContainsExcludePath(string excludePath,string filePath)
         {
-			// 絶対パスに正規化し、区切り文字を統一、除外パスには末尾区切りを付ける
+			// 絶対パスに正規化し、区切り文字を統一
             var fileFullPath = Path.GetFullPath(filePath);
 			var normalizedFile = fileFullPath.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
 
-			var normalizedExclude = Path.GetFullPath(excludePath)
-				.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
-			// MEMO: 
-			// - 末尾区切りを付けていないと "C:\foo"と "C:\foobar" の場合、部分一致により誤検知
-			// - "C:\foo\" と "C:\foobar\" なら大丈夫
-			if(normalizedExclude.EndsWith(Path.DirectorySeparatorChar) == false)
-			{
-				normalizedExclude += Path.DirectorySeparatorChar;
-			}
+			// ディレクトリを取得
+			var directoryName = Path.GetDirectoryName(normalizedFile);
+			// 取得できなかった場合は除外対象とする
+			if (directoryName == null)
+				return true;
 			
 			// 大文字小文字は無視
-			return normalizedFile.StartsWith(normalizedExclude,StringComparison.OrdinalIgnoreCase);
+			return directoryName.Contains(excludePath,StringComparison.OrdinalIgnoreCase);
         }
     }
 }
