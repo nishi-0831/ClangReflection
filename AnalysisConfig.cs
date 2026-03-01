@@ -1,11 +1,4 @@
-﻿using ClangSharp.Interop;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using YamlDotNet.Serialization;
-using YamlDotNet.Serialization.NamingConventions;
+﻿using YamlDotNet.Serialization;
 
 namespace ClangTest
 {
@@ -42,45 +35,60 @@ namespace ClangTest
     /// </summary>
     public class AnalysisConfig
     {
+        private AnalysisConfig() { }
+        private static readonly string ConfigFileName = ".clangref.yaml";
+        public string CacheFileDirectory { get; private set; } = string.Empty;
         // 解析対象から除外するディレクトリ
         // TODO: 正規表現による指定を可能にする
-        public string[] ExcludeDirectories { get; set;  } = Array.Empty<string>();
+        public string[] ExcludeDirectories { get; private set; } = Array.Empty<string>();
         // スレッド数
-        public int? MaxDegreeOfParallelism;
-        public CodeGenerationRule[] CodeGenerationRules { get; set; } = Array.Empty<CodeGenerationRule>();
+        public int? MaxDegreeOfParallelism { get; private set; }
+        public CodeGenerationRule[] CodeGenerationRules { get; private set; } = Array.Empty<CodeGenerationRule>();
         /// <summary>
-        /// プロジェクトのルートディレクトリから設定ファイルを読み取る
-        /// ".clangref.yaml"というファイル名にする必要がある
+        /// <para> ファクトリメソッド </para>
+        /// <para> プロジェクトのルートディレクトリから設定ファイルを読み取る </para>
         /// </summary>
         /// <param name="projectRoot">解析対象のプロジェクトのルートディレクトリ</param>
         /// <returns></returns>
-        public static AnalysisConfig LoadFromProjectRoot(string projectRoot)
+        /// <exception cref="FileNotFoundException">ファイルが存在しない場合にスローされる</exception>
+        public static AnalysisConfig Load(string projectRoot,string configFilePath)
         {
-            string yamlPath = Path.Combine(projectRoot, ".clangref.yaml");
-
+            string yamlPath = CalculateFilePath(projectRoot, configFilePath);
             try
             {
                 if(File.Exists(yamlPath) == false)
                 {
                     // ファイルが存在しない場合、例外を投げる
-                    Console.Error.WriteLine($"[Config] not found \".clangref.yaml\" in: {projectRoot}. place it in root of your project.");
+                    string msg = $"[Config] not found \".clangref.yaml\" in: {yamlPath}.";
+                    throw new FileNotFoundException(msg);
                 }
 
                 // yamlを読み込んで、デシリアライズ
                 var yaml = File.ReadAllText(yamlPath);
                 var deserializer = new DeserializerBuilder()
+                    // privateコンストラクタのオブジェクトもデシリアライズを許可
+                    .EnablePrivateConstructors() 
                     .IgnoreUnmatchedProperties()
                     .Build();
                 AnalysisConfig cfg = deserializer.Deserialize<AnalysisConfig>(yaml);
                 Console.WriteLine($"[Config] success to load _config");
                 return cfg;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                Console.Error.WriteLine($"[Config] failed to load _config: {ex.Message}");
+                throw;
             }
-
-            return new AnalysisConfig();
+        }
+        private static string CalculateFilePath(string projectRoot, string configFilePath)
+        {
+            string configFileFullPath = Path.Combine(projectRoot, configFilePath);
+            var normalizedFile = configFileFullPath.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
+            if ( Path.GetFileName(normalizedFile) != ConfigFileName)
+            {
+                // ファイル名を結合する
+                return Path.Combine(normalizedFile, ConfigFileName);
+            }
+            return normalizedFile;
         }
     }
 }

@@ -1,3 +1,4 @@
+CacheFileDirectory: ""
 ExcludeDirectories:
   - "EffekseeLib"
   - "vcpkg_installed"

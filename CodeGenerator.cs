@@ -1,16 +1,6 @@
-﻿using ClangSharp.Interop;
-using ClangTest;
-using Scriban;
-using Scriban.Parsing;
-using System;
-using System.CodeDom.Compiler;
+﻿using Scriban;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Runtime.CompilerServices;
 using System.Text;
-using System.Threading.Tasks;
 
 namespace ClangTest
 {
@@ -21,19 +11,17 @@ namespace ClangTest
 		private ReflectionParser _reflectionParser;
 		private Encoding _encoding;
 		private AnalysisConfig _config;
-		private const string CacheFilePath = ".analysis_cache.json";
-
-        public string ProjectRoot()
+		private const string CacheFileName = ".analysis_cache.json";
+        
+		public CodeGenerator(string projRoot, AnalysisConfig analysisConfig)
 		{
-			return _projectRoot;
-		}
-		public CodeGenerator(string projRoot, AnalysisConfig? analysisConfig = null)
-		{
-			_config = analysisConfig ?? new AnalysisConfig();
+			_config = analysisConfig;
 			_projectRoot = projRoot.Trim();
-			string cacheFile = CacheFilePath;
+			// キャッシュファイルのパスを計算
+			string cacheFileDirectory = Path.Combine(_projectRoot, analysisConfig.CacheFileDirectory);
+			string cacheFilePath = Path.Combine(cacheFileDirectory,CacheFileName);
 			// ファイルのハッシュ値を分析するクラス
-			this._cache = new ParallelAnalysisCache(cacheFile);
+			this._cache = new ParallelAnalysisCache(cacheFilePath);
 			// 並列解析数
             int maxParallelism = _config.MaxDegreeOfParallelism.HasValue ? Math.Max(1, _config.MaxDegreeOfParallelism.Value) : Environment.ProcessorCount;
             // ファイルのリフレクション情報を解析するクラス
@@ -67,7 +55,6 @@ namespace ClangTest
 			if (filesToRegenerate.Count == 0)
 			{
 				Console.WriteLine("[Gen] All files up-to-date. No regeneration needed.");
-				_cache.SaveCacheToDisk();
 				return;
 			}
 
@@ -246,7 +233,7 @@ namespace ClangTest
         /// <summary>
         /// 解析対象のファイル群を取得
         /// </summary>
-        /// <returns>/// 解析対象のファイル群</returns>
+        /// <returns>解析対象のファイル群</returns>
         private List<string> GetAnalysisTargetFile()
 		{
             // ファイルを取得
@@ -255,7 +242,7 @@ namespace ClangTest
 			if (_config.ExcludeDirectories != null && _config.ExcludeDirectories.Length > 0)
 			{
                 // 解析対象外のファイルを除外する
-				headerFiles = headerFiles.Where(file =>
+                headerFiles = headerFiles.Where(file =>
 				{
 					foreach (var excludeDir in _config.ExcludeDirectories)
 					{
@@ -288,7 +275,7 @@ namespace ClangTest
 			// 取得できなかった場合は除外対象とする
 			if (directoryName == null)
 				return true;
-			
+
 			// 大文字小文字は無視
 			return directoryName.Contains(excludePath,StringComparison.OrdinalIgnoreCase);
         }
