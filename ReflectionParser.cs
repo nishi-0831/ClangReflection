@@ -1,7 +1,7 @@
 using ClangSharp.Interop;
 using System.Runtime.InteropServices;
 
-namespace ClangTest
+namespace ClangSourceGenerator
 {
     class ReflectionParser : IDisposable
     {

@@ -1,6 +1,6 @@
 ﻿using YamlDotNet.Serialization;
 
-namespace ClangTest
+namespace ClangSourceGenerator
 {
     /// <summary>
     /// コードを生成する際の条件を保存するクラス
@@ -36,7 +36,7 @@ namespace ClangTest
     public class AnalysisConfig
     {
         private AnalysisConfig() { }
-        private static readonly string ConfigFileName = ".clangref.yaml";
+        public static string ConfigFileName { get; } = ".clang-src-gen.yaml";
         public string CacheFileDirectory { get; private set; } = string.Empty;
         // 解析対象から除外するディレクトリ
         // TODO: 正規表現による指定を可能にする
@@ -59,7 +59,7 @@ namespace ClangTest
                 if(File.Exists(yamlPath) == false)
                 {
                     // ファイルが存在しない場合、例外を投げる
-                    string msg = $"[Config] not found \".clangref.yaml\" in: {yamlPath}.";
+                    string msg = $"[Config] not found \"{ConfigFileName}\" in: {yamlPath}.";
                     throw new FileNotFoundException(msg);
                 }
 

@@ -1,5 +1,5 @@
 ﻿using System.Text;
-using ClangTest;
+using ClangSourceGenerator;
 using System.CommandLine;
 class Program
 {
@@ -19,24 +19,24 @@ class Program
         // 強制的に全解析
         var forceOption = new Option<bool>("--force", "--f")
         {
-            Description = "Force the operation",
+            Description = "Clear the cache and force all files to be generated",
             DefaultValueFactory = parseResult => false
         };
         // 設定ファイルのディレクトリ
         var configOption = new Option<string>("--config")
         {
-            Description = "Analysis Configuration File Path",
+            Description = $"Analysis configuration file path. File name must be {AnalysisConfig.ConfigFileName}",
             DefaultValueFactory = parseResult => Directory.GetCurrentDirectory()
         };
         // このツールを実行しているプロジェクトのディレクトリ
         var projectDirectoryOption = new Option<string>("--projectDirectory", "--projDir")
         {
-            Description = "Project Directory",
+            Description = "Project directory",
             DefaultValueFactory = parseResult => Directory.GetCurrentDirectory()
         };
 
         // オプションを追加
-        var rootCommand = new RootCommand("Code Generate Tool");
+        var rootCommand = new RootCommand("Source Generate Tool");
         rootCommand.Options.Add(forceOption);
         rootCommand.Options.Add(configOption);
         rootCommand.Options.Add(projectDirectoryOption);

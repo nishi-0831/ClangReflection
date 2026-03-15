@@ -2,12 +2,12 @@
 using System.Collections.Concurrent;
 using System.Text;
 
-namespace ClangTest
+namespace ClangSourceGenerator
 {
 	public class CodeGenerator
 	{
 		private string _projectRoot = "";
-		private ParallelAnalysisCache _cache;
+		private AnalysisCache _cache;
 		private ReflectionParser _reflectionParser;
 		private Encoding _encoding;
 		private AnalysisConfig _config;
@@ -21,7 +21,7 @@ namespace ClangTest
 			string cacheFileDirectory = Path.Combine(_projectRoot, analysisConfig.CacheFileDirectory);
 			string cacheFilePath = Path.Combine(cacheFileDirectory,CacheFileName);
 			// ファイルのハッシュ値を分析するクラス
-			this._cache = new ParallelAnalysisCache(cacheFilePath);
+			this._cache = new AnalysisCache(cacheFilePath);
 			// 並列解析数
             int maxParallelism = _config.MaxDegreeOfParallelism.HasValue ? Math.Max(1, _config.MaxDegreeOfParallelism.Value) : Environment.ProcessorCount;
             // ファイルのリフレクション情報を解析するクラス

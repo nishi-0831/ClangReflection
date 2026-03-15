@@ -6,7 +6,7 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Data.HashFunction.xxHash;
 using System.Data.HashFunction;
-namespace ClangTest
+namespace ClangSourceGenerator
 {
     public class XxHashComputer
     {
