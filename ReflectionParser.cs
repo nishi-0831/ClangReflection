@@ -19,6 +19,8 @@ namespace ClangSourceGenerator
             int parallelism = maxParallelism > 0 ? maxParallelism : Environment.ProcessorCount;
             // initialCount: 初期の解析数 , maxCount: 最大解析数
             _parseThrottle = new SemaphoreSlim(initialCount: parallelism, maxCount: parallelism);
+            // excludeDeclarationsFromPch: PCHに含まれる宣言を解析対象から除外するかどうか
+            _index = CXIndex.Create(excludeDeclarationsFromPch: true);
         }
         ~ReflectionParser()
         {
@@ -31,7 +33,7 @@ namespace ClangSourceGenerator
         protected String _namespaceStr = "";
         protected static string _projectDir = "";
         private static readonly object _parseLock = new();
-
+        private CXIndex _index;
         // 並列解析数を制限するクラス
         private SemaphoreSlim _parseThrottle;
         public void Dispose()
@@ -50,6 +52,11 @@ namespace ClangSourceGenerator
                 _parseThrottle?.Dispose();
             }
 
+            try
+            {
+                _index.Dispose();
+            }
+            catch { }
             // アンマネージド(unmanaged)・リソースの解放処理
             if(_libclangHandle != IntPtr.Zero)
             {
@@ -99,11 +106,10 @@ namespace ClangSourceGenerator
 
                 // C++20のヘッダファイルを読みこむ
                 var args = new[] { "-std=c++20", $"-I{directory}", "-x", "c++-header", "-fsyntax-only" };
-                // excludeDeclarationsFromPch: PCHに含まれる宣言を解析対象から除外するかどうか
-                using CXIndex index = CXIndex.Create(excludeDeclarationsFromPch: true);
-
+                
+                
                 // エラーコードを受け取り、失敗なら表示する
-                var err = CXTranslationUnit.TryParse(index, filePath, args, Array.Empty<CXUnsavedFile>(),
+                var err = CXTranslationUnit.TryParse(_index, filePath, args, Array.Empty<CXUnsavedFile>(),
                     CXTranslationUnit_Flags.CXTranslationUnit_SkipFunctionBodies, out trans);
 
                 if (err != CXErrorCode.CXError_Success)
@@ -184,10 +190,12 @@ namespace ClangSourceGenerator
         /// <returns></returns>
         static ReflectedMember GetReflectedMember(CXCursor cursor)
         {
-            
-            // 変数名
-            string name = clang.getCursorSpelling(cursor).ToString();
 
+            // 変数名
+            using CXString nameSpelling = clang.getCursorSpelling(cursor);
+            string name = nameSpelling.ToString();
+          
+              
             // 型名(名前空間を含まない、型の名前のみ)
             string type = string.Empty;
             CXType cxType = clang.getCursorType(cursor);
@@ -196,11 +204,13 @@ namespace ClangSourceGenerator
             // 組み込み型の場合、NoDeclFoundが返される
             if (typeDeclaration.kind == CXCursorKind.CXCursor_NoDeclFound)
             {
-                type = clang.getTypeSpelling(clang.getCursorType(cursor)).ToString();
+                using CXString typeSpelling = clang.getTypeSpelling(clang.getCursorType(cursor));
+                type = typeSpelling.ToString();
             }
             else
             {
-                type  = clang.getCursorSpelling(typeDeclaration).CString;
+                using CXString typeSpelling = clang.getCursorSpelling(typeDeclaration);
+                type  = typeSpelling.CString;
             }
             // アクセス修飾子
             CX_CXXAccessSpecifier access = clang.getCXXAccessSpecifier(cursor);
@@ -240,9 +250,10 @@ namespace ClangSourceGenerator
         {
             // ファイルをCXFileにキャスト
             CXFile cxFile = new CXFile((IntPtr)file);
-            
+
             // ファイル名を取得
-            var fileName = clang.getFileName(cxFile).ToString();
+            using CXString fileSpelling = clang.getFileName(cxFile);
+            var fileName = fileSpelling.ToString();
 
             // ポインタをハンドルにキャスト
             GCHandle handle = GCHandle.FromIntPtr((IntPtr)clientData);
@@ -407,7 +418,8 @@ namespace ClangSourceGenerator
             {
                 if(child.kind == CXCursorKind.CXCursor_AnnotateAttr)
                 {
-                    annotations.Add(clang.getCursorSpelling(child).ToString());
+                    using CXString annotateSpelling = clang.getCursorSpelling(child);
+                    annotations.Add(annotateSpelling.ToString());
                 }
                 return CXChildVisitResult.CXChildVisit_Continue;
             }, new CXClientData());

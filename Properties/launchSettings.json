@@ -2,8 +2,8 @@
   "profiles": {
     "ClangTest": {
       "commandName": "Project",
-      "commandLineArgs": "--config Tools/ClangReflection --projDir C:\\Users\\nishi\\source\\repos\\Platformer3DGame --force",
-      "workingDirectory": "C:\\Users\\nishi\\source\\repos\\Platformer3DGame\\out\\build\\default-debug"
+      "commandLineArgs": "--config Tools/ClangSourceGenerator --projDir C:\\Users\\nishi\\source\\repos\\Platformer3DGame --force",
+      "workingDirectory": "C:\\Users\\nishi\\source\\repos\\Platformer3DGame"
     }
   }
 }
