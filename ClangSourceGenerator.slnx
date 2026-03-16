@@ -3,8 +3,7 @@
     <Platform Name="Any CPU" />
     <Platform Name="x64" />
   </Configurations>
-  <Project Path="BenchmarkSuite1/BenchmarkSuite1.csproj" />
-  <Project Path="ClangTest.csproj">
+  <Project Path="ClangSourceGenerator.csproj">
     <Platform Solution="*|x64" Project="x64" />
   </Project>
 </Solution>

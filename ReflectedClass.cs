@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace ClangTest
+namespace ClangSourceGenerator
 {
     /// <summary>
     /// 解析したメンバ変数の情報を保存するクラス
@@ -44,7 +44,7 @@ namespace ClangTest
     /// <summary>
     /// 解析したクラスの情報を保存するクラス
     /// </summary>
-    public class ReflectedClassInfo
+    public class ReflectedClass
     {
         /// <summary>
         /// 型名

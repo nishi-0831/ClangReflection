@@ -1,19 +1,7 @@
-using ClangSharp;
 using ClangSharp.Interop;
-using System;
-using System.Collections;
-using System.Collections.Generic;
-using System.IO.Enumeration;
-using System.Linq;
-using System.Reflection;
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using System.Security.Cryptography.X509Certificates;
-using System.Text;
-using System.Text.RegularExpressions;
-using System.Threading.Tasks;
-using YamlDotNet.Core;
-namespace ClangTest
+
+namespace ClangSourceGenerator
 {
     class ReflectionParser : IDisposable
     {
@@ -23,31 +11,29 @@ namespace ClangTest
             string? libclangPath = Path.Combine(AppContext.BaseDirectory, "libclang.dll");
             if (libclangPath == null)
             {
-                throw new Exception("libclang.dll not found!!!!!!");
+                throw new Exception("[Parser] Error: libclang.dll not found!");
             }
             _libclangHandle = NativeLibrary.Load(libclangPath);
             _projectDir = projDir.Trim();
 
-            _index = CXIndex.Create();
-
             int parallelism = maxParallelism > 0 ? maxParallelism : Environment.ProcessorCount;
             // initialCount: 初期の解析数 , maxCount: 最大解析数
             _parseThrottle = new SemaphoreSlim(initialCount: parallelism, maxCount: parallelism);
+            // excludeDeclarationsFromPch: PCHに含まれる宣言を解析対象から除外するかどうか
+            _index = CXIndex.Create(excludeDeclarationsFromPch: true);
         }
         ~ReflectionParser()
         {
-            // GCはアンマネージド・リソースは解放してくれないので、Disposeを呼び出す
+            // GCはアンマネージド・リソースを解放してくれないので、Disposeを呼び出す
             Dispose(false);
         }
         private bool _disposed;
         private IntPtr _libclangHandle = IntPtr.Zero;
-        // 翻訳単位を管理するやつ。解析の開始点となる
-        private readonly CXIndex _index;
         protected List<string> _namespace = new List<string>();
         protected String _namespaceStr = "";
         protected static string _projectDir = "";
         private static readonly object _parseLock = new();
-
+        private CXIndex _index;
         // 並列解析数を制限するクラス
         private SemaphoreSlim _parseThrottle;
         public void Dispose()
@@ -64,10 +50,10 @@ namespace ClangTest
             {
                 // マネージド(managed)・リソース解放処理をここで行う
                 _parseThrottle?.Dispose();
+                _index.Dispose();
             }
-
+            
             // アンマネージド(unmanaged)・リソースの解放処理
-            _index.Dispose();
             if(_libclangHandle != IntPtr.Zero)
             {
                 NativeLibrary.Free(_libclangHandle);
@@ -76,12 +62,12 @@ namespace ClangTest
 
             _disposed = true;
         }
-        public ReflectedClassInfo? Parse(string filePath)
+        public ReflectedClass? Parse(string filePath)
         {
             // 絶対パスでファイルの存在を確認する
             if (!File.Exists(filePath))
             {
-                Console.Error.WriteLine($"{filePath} not found");
+                Console.Error.WriteLine($"[Parser] Error: {filePath} not found");
                 return null;
             }
 
@@ -105,7 +91,7 @@ namespace ClangTest
         /// <param name="filePath"></param>
         /// <param name="reflectedClass"></param>
         /// <returns>解析に成功した場合はtrue、失敗した場合、ファイルが見つからなかった場合はfalseを返す</returns>
-        private ReflectedClassInfo? ParseImpl(string filePath)
+        private ReflectedClass? ParseImpl(string filePath)
         {            
             
             CXTranslationUnit trans = new CXTranslationUnit();
@@ -116,17 +102,15 @@ namespace ClangTest
 
                 // C++20のヘッダファイルを読みこむ
                 var args = new[] { "-std=c++20", $"-I{directory}", "-x", "c++-header", "-fsyntax-only" };
-                // excludeDeclarationsFromPch: PCHに含まれる宣言を解析対象から除外するかどうか
-                using CXIndex index = CXIndex.Create(excludeDeclarationsFromPch: true);
-
+                
                 // エラーコードを受け取り、失敗なら表示する
-                var err = CXTranslationUnit.TryParse(index, filePath, args, Array.Empty<CXUnsavedFile>(),
+                var err = CXTranslationUnit.TryParse(_index, filePath, args, Array.Empty<CXUnsavedFile>(),
                     CXTranslationUnit_Flags.CXTranslationUnit_SkipFunctionBodies, out trans);
 
                 if (err != CXErrorCode.CXError_Success)
                 {
                     // 解析失敗
-                    Console.Error.WriteLine($"Parse failed: {err}");
+                    Console.Error.WriteLine($"[Parser] Error: Parse failed: {err}");
                     return null;
                 }
                 // 解析結果を代入
@@ -134,7 +118,7 @@ namespace ClangTest
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"Parse failed: {ex.Message}");
+                Console.Error.WriteLine($"[Parser] Error: Parse failed: {ex.Message}");
             }
             finally
             {
@@ -142,10 +126,10 @@ namespace ClangTest
             }
             return null;
         }
-        private unsafe  ReflectedClassInfo GetReflectedClass(CXTranslationUnit trans)
+        private unsafe  ReflectedClass GetReflectedClass(CXTranslationUnit trans)
         {
             CXCursor cursor = trans.Cursor;
-            List<string> classAnnotations = new();
+            string classAnnotation = string.Empty;
             List<string> classAttributes = new();
             string metaType = "";
             string className = "";
@@ -165,13 +149,12 @@ namespace ClangTest
                 {
                     className = clang.getCursorSpelling(child).ToString();
                     nameSpace = GetTypeNameSpace(child);
-                    classAnnotations = GetAnnotations(child);
-                    foreach (string anno in classAnnotations)
-                    {
-                        var (macroName, args) = ParseAnnotation(anno);
-                        classAttributes.AddRange(args);
-                        metaType = macroName;
-                    }
+                    classAnnotation = GetAnnotations(child);
+
+                    var (macroName, args) = ParseAnnotation(classAnnotation);
+                    classAttributes.AddRange(args);
+                    metaType = macroName;
+
                     directory = GetDirectory(trans);
                 }
                 else if(child.kind == CXCursorKind.CXCursor_FieldDecl)
@@ -183,7 +166,7 @@ namespace ClangTest
             }, new CXClientData());
 
             // 解析結果を代入
-            ReflectedClassInfo reflectedClass = new ReflectedClassInfo
+            ReflectedClass reflectedClass = new ReflectedClass
             {
                 ClassName = className,
                 NameSpace = nameSpace,
@@ -201,10 +184,10 @@ namespace ClangTest
         /// <returns></returns>
         static ReflectedMember GetReflectedMember(CXCursor cursor)
         {
-            
             // 変数名
-            string name = clang.getCursorSpelling(cursor).ToString();
-
+            using CXString nameSpelling = clang.getCursorSpelling(cursor);
+            string name = nameSpelling.ToString();
+          
             // 型名(名前空間を含まない、型の名前のみ)
             string type = string.Empty;
             CXType cxType = clang.getCursorType(cursor);
@@ -213,26 +196,22 @@ namespace ClangTest
             // 組み込み型の場合、NoDeclFoundが返される
             if (typeDeclaration.kind == CXCursorKind.CXCursor_NoDeclFound)
             {
-                type = clang.getTypeSpelling(clang.getCursorType(cursor)).ToString();
+                using CXString typeSpelling = clang.getTypeSpelling(clang.getCursorType(cursor));
+                type = typeSpelling.ToString();
             }
             else
             {
-                type  = clang.getCursorSpelling(typeDeclaration).CString;
+                using CXString typeSpelling = clang.getCursorSpelling(typeDeclaration);
+                type  = typeSpelling.CString;
             }
             // アクセス修飾子
             CX_CXXAccessSpecifier access = clang.getCXXAccessSpecifier(cursor);
 
             // アノテーションを取得
-            List<string> fieldAnnotations = GetAnnotations(cursor);
-            List<string> attrs = new();
-            string metadataType = "";
-            foreach (string anno in fieldAnnotations)
-            {
-                // アノテーションに付与されたメタデータを取得
-                var (macroName, args) = ParseAnnotation(anno);
-                metadataType = macroName;
-                attrs.AddRange(args);
-            }
+            string fieldAnnotation = GetAnnotations(cursor);
+
+            // アノテーションに付与されたメタデータを取得
+            var (macroName, args) = ParseAnnotation(fieldAnnotation);            
 
             return new ReflectedMember
             {
@@ -240,8 +219,8 @@ namespace ClangTest
                 TypeName = type,
                 IsPrivate = (access == CX_CXXAccessSpecifier.CX_CXXPrivate),
                 AccessLevel = GetAccessLevel(cursor),
-                MetadataType = metadataType,
-                MetaOptions = attrs,
+                MetadataType = macroName,
+                MetaOptions = args,
                 NameSpace = GetMemberNameSpace(cursor)
             };
         }
@@ -257,9 +236,10 @@ namespace ClangTest
         {
             // ファイルをCXFileにキャスト
             CXFile cxFile = new CXFile((IntPtr)file);
-            
+
             // ファイル名を取得
-            var fileName = clang.getFileName(cxFile).ToString();
+            using CXString fileSpelling = clang.getFileName(cxFile);
+            var fileName = fileSpelling.ToString();
 
             // ポインタをハンドルにキャスト
             GCHandle handle = GCHandle.FromIntPtr((IntPtr)clientData);
@@ -268,7 +248,7 @@ namespace ClangTest
             // キャスト失敗
             if (holder == null)
             {
-                Console.Error.WriteLine("handle.target is null");
+                Console.Error.WriteLine("[Parser] Error: handle.target is null");
                 return;
             }
 
@@ -417,18 +397,21 @@ namespace ClangTest
         /// </summary>
         /// <param name="cursor"></param>
         /// <returns></returns>
-        static unsafe List<string> GetAnnotations(CXCursor cursor)
+        static unsafe string GetAnnotations(CXCursor cursor)
         {
-            List<string> annotations = new();
+            string annotation = string.Empty;
+            
             cursor.VisitChildren((child, parent, clientData) =>
             {
                 if(child.kind == CXCursorKind.CXCursor_AnnotateAttr)
                 {
-                    annotations.Add(clang.getCursorSpelling(child).ToString());
+                    using CXString annotateSpelling = clang.getCursorSpelling(child);
+                    annotation = annotateSpelling.ToString();
+                    return CXChildVisitResult.CXChildVisit_Break;
                 }
                 return CXChildVisitResult.CXChildVisit_Continue;
             }, new CXClientData());
-            return annotations;
+            return annotation;
         }
 
         /// <summary>

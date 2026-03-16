@@ -2,7 +2,8 @@
   "profiles": {
     "ClangTest": {
       "commandName": "Project",
-      "commandLineArgs": "C:\\Users\\nishi\\source\\repos\\ClangTest C:\\Users\\nishi\\source\\repos\\ClangTest --force"
+      "commandLineArgs": "--config Tools/ClangSourceGenerator --projDir C:\\Users\\nishi\\source\\repos\\Platformer3DGame --force",
+      "workingDirectory": "C:\\Users\\nishi\\source\\repos\\Platformer3DGame"
     }
   }
 }
