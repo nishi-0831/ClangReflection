@@ -1,4 +1,4 @@
-﻿using Scriban;
+using Scriban;
 using System.Collections.Concurrent;
 using System.Text;
 
@@ -29,6 +29,7 @@ namespace ClangSourceGenerator
 			// エンコーディングを取得
             this._encoding = new System.Text.UTF8Encoding(false,true);
         }
+
 		public void ClearCache()
 		{
 			_cache.Clear();
@@ -276,8 +277,19 @@ namespace ClangSourceGenerator
 			if (directoryName == null)
 				return true;
 
-			// 大文字小文字は無視
-			return directoryName.Contains(excludePath,StringComparison.OrdinalIgnoreCase);
+			// ディレクトリを区切り文字によってセグメントに分割
+			// home/user/doc の場合、 home,user,docに分かれる
+			string[] segments = directoryName.Split(Path.DirectorySeparatorChar);
+			// セグメントと除外ディレクトリが一致するか確認
+			foreach(var segment in segments)
+			{
+				// 大文字小文字は無視
+				if(string.Equals(segment,excludePath,StringComparison.OrdinalIgnoreCase))
+				{
+					return true;
+				}
+			}
+			return false;	
         }
     }
 }

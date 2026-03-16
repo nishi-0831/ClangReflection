@@ -24,7 +24,7 @@ namespace ClangSourceGenerator
         }
         ~ReflectionParser()
         {
-            // GCはアンマネージド・リソースは解放してくれないので、Disposeを呼び出す
+            // GCはアンマネージド・リソースを解放してくれないので、Disposeを呼び出す
             Dispose(false);
         }
         private bool _disposed;
@@ -50,13 +50,9 @@ namespace ClangSourceGenerator
             {
                 // マネージド(managed)・リソース解放処理をここで行う
                 _parseThrottle?.Dispose();
-            }
-
-            try
-            {
                 _index.Dispose();
             }
-            catch { }
+            
             // アンマネージド(unmanaged)・リソースの解放処理
             if(_libclangHandle != IntPtr.Zero)
             {
@@ -107,7 +103,6 @@ namespace ClangSourceGenerator
                 // C++20のヘッダファイルを読みこむ
                 var args = new[] { "-std=c++20", $"-I{directory}", "-x", "c++-header", "-fsyntax-only" };
                 
-                
                 // エラーコードを受け取り、失敗なら表示する
                 var err = CXTranslationUnit.TryParse(_index, filePath, args, Array.Empty<CXUnsavedFile>(),
                     CXTranslationUnit_Flags.CXTranslationUnit_SkipFunctionBodies, out trans);
@@ -134,7 +129,7 @@ namespace ClangSourceGenerator
         private unsafe  ReflectedClass GetReflectedClass(CXTranslationUnit trans)
         {
             CXCursor cursor = trans.Cursor;
-            List<string> classAnnotations = new();
+            string classAnnotation = string.Empty;
             List<string> classAttributes = new();
             string metaType = "";
             string className = "";
@@ -154,13 +149,12 @@ namespace ClangSourceGenerator
                 {
                     className = clang.getCursorSpelling(child).ToString();
                     nameSpace = GetTypeNameSpace(child);
-                    classAnnotations = GetAnnotations(child);
-                    foreach (string anno in classAnnotations)
-                    {
-                        var (macroName, args) = ParseAnnotation(anno);
-                        classAttributes.AddRange(args);
-                        metaType = macroName;
-                    }
+                    classAnnotation = GetAnnotations(child);
+
+                    var (macroName, args) = ParseAnnotation(classAnnotation);
+                    classAttributes.AddRange(args);
+                    metaType = macroName;
+
                     directory = GetDirectory(trans);
                 }
                 else if(child.kind == CXCursorKind.CXCursor_FieldDecl)
@@ -190,12 +184,10 @@ namespace ClangSourceGenerator
         /// <returns></returns>
         static ReflectedMember GetReflectedMember(CXCursor cursor)
         {
-
             // 変数名
             using CXString nameSpelling = clang.getCursorSpelling(cursor);
             string name = nameSpelling.ToString();
           
-              
             // 型名(名前空間を含まない、型の名前のみ)
             string type = string.Empty;
             CXType cxType = clang.getCursorType(cursor);
@@ -216,16 +208,10 @@ namespace ClangSourceGenerator
             CX_CXXAccessSpecifier access = clang.getCXXAccessSpecifier(cursor);
 
             // アノテーションを取得
-            List<string> fieldAnnotations = GetAnnotations(cursor);
-            List<string> attrs = new();
-            string metadataType = "";
-            foreach (string anno in fieldAnnotations)
-            {
-                // アノテーションに付与されたメタデータを取得
-                var (macroName, args) = ParseAnnotation(anno);
-                metadataType = macroName;
-                attrs.AddRange(args);
-            }
+            string fieldAnnotation = GetAnnotations(cursor);
+
+            // アノテーションに付与されたメタデータを取得
+            var (macroName, args) = ParseAnnotation(fieldAnnotation);            
 
             return new ReflectedMember
             {
@@ -233,8 +219,8 @@ namespace ClangSourceGenerator
                 TypeName = type,
                 IsPrivate = (access == CX_CXXAccessSpecifier.CX_CXXPrivate),
                 AccessLevel = GetAccessLevel(cursor),
-                MetadataType = metadataType,
-                MetaOptions = attrs,
+                MetadataType = macroName,
+                MetaOptions = args,
                 NameSpace = GetMemberNameSpace(cursor)
             };
         }
@@ -411,19 +397,21 @@ namespace ClangSourceGenerator
         /// </summary>
         /// <param name="cursor"></param>
         /// <returns></returns>
-        static unsafe List<string> GetAnnotations(CXCursor cursor)
+        static unsafe string GetAnnotations(CXCursor cursor)
         {
-            List<string> annotations = new();
+            string annotation = string.Empty;
+            
             cursor.VisitChildren((child, parent, clientData) =>
             {
                 if(child.kind == CXCursorKind.CXCursor_AnnotateAttr)
                 {
                     using CXString annotateSpelling = clang.getCursorSpelling(child);
-                    annotations.Add(annotateSpelling.ToString());
+                    annotation = annotateSpelling.ToString();
+                    return CXChildVisitResult.CXChildVisit_Break;
                 }
                 return CXChildVisitResult.CXChildVisit_Continue;
             }, new CXClientData());
-            return annotations;
+            return annotation;
         }
 
         /// <summary>
