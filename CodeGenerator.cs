@@ -53,7 +53,7 @@ namespace ClangSourceGenerator
 			};
 
 			// 再生成が必要なファイルなし
-			if (filesToRegenerate.Count == 0)
+			if (filesToRegenerate.IsEmpty)
 			{
 				Console.WriteLine("[Gen] All files up-to-date. No regeneration needed.");
 				return;
@@ -240,7 +240,7 @@ namespace ClangSourceGenerator
             // ファイルを取得
             var headerFiles = Directory.GetFiles(_projectRoot, "*.h", SearchOption.AllDirectories).ToList();
 
-			if (_config.ExcludeDirectories != null && _config.ExcludeDirectories.Length > 0)
+			if (_config.ExcludeDirectories != null && _config.ExcludeDirectories.Count > 0)
 			{
                 // 解析対象外のファイルを除外する
                 headerFiles = headerFiles.Where(file =>

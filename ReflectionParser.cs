@@ -32,7 +32,6 @@ namespace ClangSourceGenerator
         protected List<string> _namespace = new List<string>();
         protected String _namespaceStr = "";
         protected static string _projectDir = "";
-        private static readonly object _parseLock = new();
         private CXIndex _index;
         // 並列解析数を制限するクラス
         private SemaphoreSlim _parseThrottle;
