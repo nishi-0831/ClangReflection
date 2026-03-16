@@ -245,16 +245,8 @@ namespace ClangSourceGenerator
                 // 解析対象外のファイルを除外する
                 headerFiles = headerFiles.Where(file =>
 				{
-					foreach (var excludeDir in _config.ExcludeDirectories)
-					{
-						if(ContainsExcludePath(excludeDir,file))
-						{
-							return false;
-						}
-					}
-					return true;
+					return ContainsExcludePath(file) == false;
 				}).ToList();
-
 			}
 
 			return headerFiles;
@@ -262,10 +254,9 @@ namespace ClangSourceGenerator
 		/// <summary>
 		/// ファイルのパスが、解析から除外する対象か否かを返す
 		/// </summary>
-		/// <param name="excludePath">除外パス</param>
 		/// <param name="filePath">ファイルのパス</param>
 		/// <returns>除外対象の場合、またはファイルのディレクトリが取得できなかった場合は<c>true</c>を返す</returns>
-        static bool ContainsExcludePath(string excludePath,string filePath)
+        bool ContainsExcludePath(string filePath)
         {
 			// 絶対パスに正規化し、区切り文字を統一
             var fileFullPath = Path.GetFullPath(filePath);
@@ -283,10 +274,13 @@ namespace ClangSourceGenerator
 			// セグメントと除外ディレクトリが一致するか確認
 			foreach(var segment in segments)
 			{
-				// 大文字小文字は無視
-				if(string.Equals(segment,excludePath,StringComparison.OrdinalIgnoreCase))
+				foreach(var excludeSegment in _config.ExcludeDirectories)
 				{
-					return true;
+					// 大文字小文字は無視
+					if(string.Equals(segment,excludeSegment,StringComparison.OrdinalIgnoreCase))
+					{
+						return true;
+					}
 				}
 			}
 			return false;	
