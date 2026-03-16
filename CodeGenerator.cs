@@ -1,58 +1,27 @@
-﻿using ClangSharp.Interop;
-using ClangTest;
 using Scriban;
-using Scriban.Parsing;
-using System;
-using System.CodeDom.Compiler;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Runtime.CompilerServices;
 using System.Text;
-using System.Threading.Tasks;
 
-namespace ClangTest
+namespace ClangSourceGenerator
 {
-	public readonly struct GenerateTargetInfo
-	{
-		public string NameSpace { get; }
-		public string ClassName { get; }
-		public string Directory { get; }
-		public GenerateTargetInfo(string nameSpace,string className,string directory)
-		{
-			this.NameSpace = nameSpace;
-			this.ClassName = className;
-			this.Directory = directory;
-		}
-		public GenerateTargetInfo(ref readonly ReflectedClassInfo reflectedClass)
-		{
-			this.NameSpace= reflectedClass.NameSpace;
-			this.ClassName = reflectedClass.ClassName;
-			this.Directory = reflectedClass.Directory;
-		}
-    }
-
 	public class CodeGenerator
 	{
 		private string _projectRoot = "";
-		private ParallelAnalysisCache _cache;
+		private AnalysisCache _cache;
 		private ReflectionParser _reflectionParser;
 		private Encoding _encoding;
 		private AnalysisConfig _config;
-		private const string CacheFilePath = ".analysis_cache.json";
-
-        public string ProjectRoot()
+		private const string CacheFileName = ".analysis_cache.json";
+        
+		public CodeGenerator(string projRoot, AnalysisConfig analysisConfig)
 		{
-			return _projectRoot;
-		}
-		public CodeGenerator(string projRoot, AnalysisConfig? analysisConfig = null)
-		{
-			_config = analysisConfig ?? new AnalysisConfig();
+			_config = analysisConfig;
 			_projectRoot = projRoot.Trim();
-			string cacheFile = CacheFilePath;
+			// キャッシュファイルのパスを計算
+			string cacheFileDirectory = Path.Combine(_projectRoot, analysisConfig.CacheFileDirectory);
+			string cacheFilePath = Path.Combine(cacheFileDirectory,CacheFileName);
 			// ファイルのハッシュ値を分析するクラス
-			this._cache = new ParallelAnalysisCache(cacheFile);
+			this._cache = new AnalysisCache(cacheFilePath);
 			// 並列解析数
             int maxParallelism = _config.MaxDegreeOfParallelism.HasValue ? Math.Max(1, _config.MaxDegreeOfParallelism.Value) : Environment.ProcessorCount;
             // ファイルのリフレクション情報を解析するクラス
@@ -60,6 +29,7 @@ namespace ClangTest
 			// エンコーディングを取得
             this._encoding = new System.Text.UTF8Encoding(false,true);
         }
+
 		public void ClearCache()
 		{
 			_cache.Clear();
@@ -69,7 +39,7 @@ namespace ClangTest
 			object lockObj = new();
 
 			// ヘッダファイルの数、生成をスキップした数、生成した数。コンソールに表示する
-			int headerCount = 0, skipped = 0, regenerated = 0, failureCount = 0;
+			int headerCount = 0, skipped = 0, generated = 0, failureCount = 0;
 
 			// ファイルを取得
 			var headerFiles = GetAnalysisTargetFile();
@@ -86,7 +56,6 @@ namespace ClangTest
 			if (filesToRegenerate.Count == 0)
 			{
 				Console.WriteLine("[Gen] All files up-to-date. No regeneration needed.");
-				_cache.SaveCacheToDisk();
 				return;
 			}
 
@@ -102,33 +71,37 @@ namespace ClangTest
 				{
 					string relative = Path.GetRelativePath(_projectRoot, headerFile);
 
-                    ReflectedClassInfo? reflectedClass = _reflectionParser.Parse(headerFile);
+                    Console.WriteLine($"[Gen] parse {relative}");
+					// ヘッダを解析
+                    ReflectedClass? reflectedClass = _reflectionParser.Parse(headerFile);
+					bool success = false;
 					if (reflectedClass != null)
 					{
-						Generate(in reflectedClass);
+						// ソースコードの生成を試みる
+						success = Generate(in reflectedClass);
 					}
 					lock (lockObj)
 					{
-						// TODO: Generateで実際に生成されるとは限らないため、
-						// この条件式でカウントするのは間違い。Loggerを用意して詳細にチェックすべし
-						if(reflectedClass != null)
+						if(success)
 						{
-                            regenerated++;
-                            Console.WriteLine($"[Gen] {relative}");
+							// 生成に成功
+                            generated++;
                         }
                         else
 						{
+							// 生成を行わなかった
                             skipped++;
-                            Console.WriteLine($"[Skipped] {relative}");
+                            Console.WriteLine($"[Gen] skipped {relative}");
                         }
                     }
+					// ヘッダファイルをキャッシュ
 					_cache.UpdateCache(headerFile);
 				}
 				catch (Exception ex)
 				{
 					lock (lockObj)
 					{
-                        Console.Error.WriteLine($"[Error] {Path.GetFileName(headerFile)}: {ex.Message}");
+                        Console.Error.WriteLine($"[Gen] error {Path.GetFileName(headerFile)}: {ex.Message}");
                         failureCount++;
                     }
 				}
@@ -143,37 +116,66 @@ namespace ClangTest
 			// 結果を表示
 			Console.WriteLine();
 			Console.WriteLine($"[Gen] Complete in {stopwatch.ElapsedMilliseconds} ms");
-			Console.WriteLine($"[Gen] Regenerated: {regenerated}, Skipped: {skipped}, Failure: {failureCount}");
+			Console.WriteLine($"[Gen] Generated: {generated}, Skipped: {skipped}, Failure: {failureCount}");
 
 			(_reflectionParser as IDisposable)?.Dispose();
 		}
 		
-		private void Generate(ref readonly ReflectedClassInfo reflectedClass)
+		/// <summary>
+		/// 解析したクラス情報に基づいて、設定済みのコード生成ルールからソースコードを生成する
+		/// </summary>
+		/// <remarks>
+		/// <list type="bullet">
+		/// <item><description>クラスにメタデータが設定されていない場合はスキップ</description>></item>
+		/// <item><description>生成されたコードは、元のヘッダファイルと同じディレクトリに<c>{ClassName}.generated.h</c>として出力される</description>></item>
+		/// </list>
+		/// </remarks>
+		/// <param name="reflectedClass">解析済みのクラス情報</param>
+		/// <returns>一つ以上のファイル生成に成功した場合は<c>true</c>、すべてスキップまたは失敗した場合は<c>false</c></returns>
+		private bool Generate(ref readonly ReflectedClass reflectedClass)
 		{
-			List<string> results = new ();
+			bool result = false;
+			// MetadaTypeが空の場合はスキップ
 			if (string.IsNullOrEmpty(reflectedClass.MetadataType))
-				return;
+				return result;
+
 			foreach(var rule in _config.CodeGenerationRules)
 			{
-				string result = Render(in reflectedClass, rule);
-				if (string.IsNullOrEmpty(result))
+				// コード生成ルールをもとに、生成された文字列
+				string renderedText = Render(in reflectedClass, rule);
+
+				// 空の場合は生成を行っていないので、continue
+				if (string.IsNullOrEmpty(renderedText))
 					continue;
+
+				// 生成した文字列を書き込んでいく
 				string fileName = $"{reflectedClass.ClassName}.generated.h";
 				string filePath = Path.GetFullPath(Path.Combine(_projectRoot, reflectedClass.Directory));
 				string generateFile = Path.GetFullPath(Path.Combine(filePath, fileName));
 				try
 				{
-					File.WriteAllText(generateFile, result, _encoding);
-					Console.WriteLine($"generate:{generateFile}");
+					File.WriteAllText(generateFile, renderedText, _encoding);
+					Console.WriteLine($"[Gen] generate:{generateFile}");
+					result = true;
 				}
 				catch (Exception ex)
 				{
-					Console.Error.WriteLine($"File Write Error:{ex.GetType().Name},{ex.Message}");
+					Console.Error.WriteLine($"[Gen] File Write Error:{ex.GetType().Name},{ex.Message}");
 				}
 			}
+			return result;
         }
-		
-		private string Render(ref readonly ReflectedClassInfo classInfo,CodeGenerationRule rule)
+
+        /// <summary>
+        /// 指定されたコード生成ルールに基づいて、Scribanテンプレートで文字列をレンダリングする。
+        /// </summary>
+		/// <remarks>
+		/// ファイル読み込みの例外が発生しても、スローせずに空文字を返す
+		/// </remarks>
+        /// <param name="reflectedClass">解析済みのクラス情報</param>
+        /// <param name="rule">適用するコード生成ルール</param>
+        /// <returns>レンダリング結果の文字列。レンダリングが行われなかった場合、空文字列を返す</returns>
+        private string Render(ref readonly ReflectedClass reflectedClass,CodeGenerationRule rule)
 		{
 			string result = string.Empty;
 
@@ -181,7 +183,7 @@ namespace ClangTest
 			if (string.IsNullOrEmpty(rule.ClassMetadataType))
 				return result;
 			// ruleに定められたメタデータの種類(例:UCOMPONENT)、とクラスのメタデータの種類が一致しているか
-            if (rule.ClassMetadataType != classInfo.MetadataType)
+            if (rule.ClassMetadataType != reflectedClass.MetadataType)
                 return result;
 
 			// テンプレートファイルのパス
@@ -203,7 +205,7 @@ namespace ClangTest
             List<ReflectedMember> members = new();
 
 			// ruleに指定されたメタデータと一致しているメンバ変数を抽出
-            members = classInfo.Members.
+            members = reflectedClass.Members.
                 Where(member => member.MetaOptions.Contains(rule.MetadataOptions) || string.IsNullOrEmpty(rule.MetadataOptions)).
                 Where(member => member.MetadataType == rule.MemberMetadataType).ToList();
 
@@ -223,13 +225,16 @@ namespace ClangTest
 			// テンプレートにクラスの情報を渡して、ソースを生成
             result = template.Render(new
             {
-                @name_space = classInfo.NameSpace,
-                @class_name = classInfo.ClassName,
+                @name_space = reflectedClass.NameSpace,
+                @class_name = reflectedClass.ClassName,
                 @properties = members
             });
 			return result;
         }
-		
+        /// <summary>
+        /// 解析対象のファイル群を取得
+        /// </summary>
+        /// <returns>解析対象のファイル群</returns>
         private List<string> GetAnalysisTargetFile()
 		{
             // ファイルを取得
@@ -237,28 +242,13 @@ namespace ClangTest
 
 			if (_config.ExcludeDirectories != null && _config.ExcludeDirectories.Length > 0)
 			{
-				// 除外するディレクトリを絶対パスで取得
-				var absoluteExcludes = _config.ExcludeDirectories
-					.Where(s => string.IsNullOrWhiteSpace(s) == false)
-                    .Select(s =>
-                    {
-                        // 相対パスの場合はプロジェクトのルートと結合。絶対パスならそのまま
-                        string p = Path.IsPathRooted(s) ? s : Path.GetFullPath(Path.Combine(_projectRoot, s));
-                        // 終端に"\"(バックスラッシュ)が付いていない場合は、付ける
-                        if (p.EndsWith(Path.DirectorySeparatorChar) == false)
-                        {
-                            p = p + Path.DirectorySeparatorChar;
-                        }
-                        return p;
-                    }).ToArray();
-
-				headerFiles = headerFiles.Where(file =>
+                // 解析対象外のファイルを除外する
+                headerFiles = headerFiles.Where(file =>
 				{
-					foreach (var excludePath in absoluteExcludes)
+					foreach (var excludeDir in _config.ExcludeDirectories)
 					{
-						if(ContainsExcludePath(excludePath,file))
+						if(ContainsExcludePath(excludeDir,file))
 						{
-							// 除外するディレクトリにある場合は解析しない
 							return false;
 						}
 					}
@@ -269,24 +259,37 @@ namespace ClangTest
 
 			return headerFiles;
 		}
-        bool ContainsExcludePath(string excludePath,string filePath)
+		/// <summary>
+		/// ファイルのパスが、解析から除外する対象か否かを返す
+		/// </summary>
+		/// <param name="excludePath">除外パス</param>
+		/// <param name="filePath">ファイルのパス</param>
+		/// <returns>除外対象の場合、またはファイルのディレクトリが取得できなかった場合は<c>true</c>を返す</returns>
+        static bool ContainsExcludePath(string excludePath,string filePath)
         {
-			// 絶対パスに正規化し、区切り文字を統一、除外パスには末尾区切りを付ける
+			// 絶対パスに正規化し、区切り文字を統一
             var fileFullPath = Path.GetFullPath(filePath);
 			var normalizedFile = fileFullPath.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
 
-			var normalizedExclude = Path.GetFullPath(excludePath)
-				.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
-			// MEMO: 
-			// - 末尾区切りを付けていないと "C:\foo"と "C:\foobar" の場合、部分一致により誤検知
-			// - "C:\foo\" と "C:\foobar\" なら大丈夫
-			if(normalizedExclude.EndsWith(Path.DirectorySeparatorChar) == false)
+			// ディレクトリを取得
+			var directoryName = Path.GetDirectoryName(normalizedFile);
+			// 取得できなかった場合は除外対象とする
+			if (directoryName == null)
+				return true;
+
+			// ディレクトリを区切り文字によってセグメントに分割
+			// home/user/doc の場合、 home,user,docに分かれる
+			string[] segments = directoryName.Split(Path.DirectorySeparatorChar);
+			// セグメントと除外ディレクトリが一致するか確認
+			foreach(var segment in segments)
 			{
-				normalizedExclude += Path.DirectorySeparatorChar;
+				// 大文字小文字は無視
+				if(string.Equals(segment,excludePath,StringComparison.OrdinalIgnoreCase))
+				{
+					return true;
+				}
 			}
-			
-			// 大文字小文字は無視
-			return normalizedFile.StartsWith(normalizedExclude,StringComparison.OrdinalIgnoreCase);
+			return false;	
         }
     }
 }

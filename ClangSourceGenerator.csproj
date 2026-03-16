@@ -34,8 +34,10 @@
     <PackageReference Include="ClangSharp.Interop" Version="20.1.2.4" />
     <PackageReference Include="libClangSharp" Version="20.1.2" />
     <PackageReference Include="libClangSharp.runtime.win-x64" Version="20.1.2" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.CommandLine" Version="10.0.3" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageReference Include="Scriban" Version="6.5.2" />
+    <PackageReference Include="System.CommandLine" Version="2.0.3" />
     <PackageReference Include="System.Data.HashFunction.Core" Version="2.0.0" />
     <PackageReference Include="System.Data.HashFunction.Interfaces" Version="2.0.0" />
     <PackageReference Include="System.Data.HashFunction.xxHash" Version="2.0.0" />
@@ -43,10 +45,6 @@
     <PackageReference Include="System.Text.Encoding.CodePages" Version="10.0.0" />
     <PackageReference Include="YamlDotNet" Version="16.3.0" />
   </ItemGroup>
-
-  <Target Name="PreBuild" BeforeTargets="PreBuildEvent">
-    <Exec Command="ECHO $(ProjectDir) &gt; $(TargetDir)ProjectDirPath.txt&#xD;&#xA;" />
-  </Target>
 
 </Project>
 
