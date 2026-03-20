@@ -1,0 +1,17 @@
+CacheFileDirectory: ""
+ExcludeDirectories:
+  - "EffekseeLib"
+  - "vcpkg_installed"
+  - "ImGui" 
+  - "packages" 
+MaxDegreeOfParallelism: 4
+OutputDirectory: "Generated"
+CodeGenerationRules:
+  -  ClassMetadataType: "MT_COMPONENT"
+     MemberMetadataType: "MT_PROPERTY"
+     OutputTemplate: "GenerateComponentHeader.sbn"
+     OutputFileName: "{}.generated.h"
+  -  ClassMetadataType: "MT_COMPONENT"
+     MemberMetadataType: "MT_PROPERTY"
+     OutputTemplate: "GenerateComponentCpp.sbn"
+     OutputFileName: "{}.gen.cpp"

@@ -4,6 +4,11 @@
       "commandName": "Project",
       "commandLineArgs": "--config Tools/ClangSourceGenerator --projDir C:\\Users\\nishi\\source\\repos\\Platformer3DGame --force",
       "workingDirectory": "C:\\Users\\nishi\\source\\repos\\Platformer3DGame"
+    },
+    "プロファイル 1": {
+      "commandName": "Project",
+      "commandLineArgs": "--force",
+      "workingDirectory": "C:\\Users\\nishi\\source\\Coding"
     }
   }
 }

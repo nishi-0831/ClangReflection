@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using ClangSourceGenerator;
 using System.CommandLine;
 class Program
@@ -7,12 +7,6 @@ class Program
     {
         // 文字コードのプロバイダーを登録
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
-        if (args.Length < 1)
-        {
-            Console.Error.WriteLine("fatal: Specify the project directory path as a command line argument");
-            Console.Error.WriteLine("Usage: <exe> <ProjectDir> [options]");
-            return 1;
-        }
 
         // オプションの作成
 
