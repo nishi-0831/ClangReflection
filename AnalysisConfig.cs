@@ -1,4 +1,4 @@
-﻿using YamlDotNet.Serialization;
+using YamlDotNet.Serialization;
 
 namespace ClangSourceGenerator
 {
@@ -13,37 +13,67 @@ namespace ClangSourceGenerator
         /// <para> クラスに割り当てられたメタデータの種類</para>
         /// <para> 例 : MT_COMPONENT</para>
         /// </summary>
-        public string ClassMetadataType { get; init; } = "";
+        public string ClassMetadataType { get; init; } = string.Empty;
         /// <summary>
         /// <para> メンバ変数に割り当てられたメタデータの種類 </para>
         /// <para> 例 : MT_PROPERTY </para>
         /// </summary>
-        public string MemberMetadataType { get; init; } = "";
+        public string MemberMetadataType { get; init; } = string.Empty;
         /// <summary>
         /// <para> メンバ変数のメタデータのオプション </para>
         /// <para> 例 : MT_PROPERTY(Serialize)のSerialize部分</para>
         /// </summary>
-        public string MetadataOptions { get; init; } = "";
+        public string MetadataOptions { get; init; } = string.Empty;
         /// <summary>
         /// コード生成に利用するテンプレートファイル
         /// Scribanを使う
         /// </summary>
-        public string OutputTemplate { get; init; } = "";
+        public string OutputTemplate { get; init; } = string.Empty;
+
+        /// <summary>
+        /// <para> 生成されるファイルの名前。<see cref="CodeGenerationRule.ReplaceString"/>を解析したクラス名で置換する </para>
+        /// <para> 例 : "{}.generated.h" で解析クラスが Hogeの場合、 Hoge.generated.hとなる </para>
+        /// </summary>
+        public string OutputFileName { get; init; } = string.Empty;
+        /// <summary>
+        /// <para> OutputFileNameの特定箇所を解析したクラス名で置き換える文字 </para>
+        /// <para> 例 : "{}.generated.h" で解析クラスが Hogeの場合、 Hoge.generated.hとなる </para>
+        /// </summary>
+        public const string ReplaceString = "{}";
     }
     /// <summary>
     /// コード解析、生成する際の設定を保持するクラス
     /// </summary>
     public class AnalysisConfig
     {
-        private AnalysisConfig() { }
+        private AnalysisConfig(RawAnalysisConfig rawAnalysisConfig) 
+        {
+            CacheFileDirectory = rawAnalysisConfig.CacheFileDirectory;
+            ExcludeDirectories = rawAnalysisConfig.ExcludeDirectories;
+            OutputDirectory = rawAnalysisConfig.OutputDirectory;
+            MaxDegreeOfParallelism = rawAnalysisConfig.MaxDegreeOfParallelism;
+            CodeGenerationRules = rawAnalysisConfig.CodeGenerationRules;
+        }
         public static string ConfigFileName { get; } = ".clang-src-gen.yaml";
-        public string CacheFileDirectory { get; private set; } = string.Empty;
+        public string CacheFileDirectory { get; } = string.Empty;
         // 解析対象から除外するディレクトリ
-        // TODO: 正規表現による指定を可能にする
-        public string[] ExcludeDirectories { get; private set; } = Array.Empty<string>();
+        public IReadOnlyList<string> ExcludeDirectories { get;}
         // スレッド数
-        public int? MaxDegreeOfParallelism { get; private set; }
-        public CodeGenerationRule[] CodeGenerationRules { get; private set; } = Array.Empty<CodeGenerationRule>();
+        public int? MaxDegreeOfParallelism { get; }
+        public string OutputDirectory { get;} = string.Empty;
+        public IReadOnlyList<CodeGenerationRule> CodeGenerationRules { get; }
+
+        /// <summary>
+        /// デシリアライズ専用のクラス
+        /// </summary>
+        private sealed class RawAnalysisConfig
+        {
+            public string CacheFileDirectory { get; set; } = string.Empty;
+            public string[] ExcludeDirectories { get; set; } = [];
+            public int? MaxDegreeOfParallelism { get; set; }
+            public string OutputDirectory { get; set; } = string.Empty;
+            public CodeGenerationRule[] CodeGenerationRules { get; set; } = [];
+        }
         /// <summary>
         /// <para> ファクトリメソッド </para>
         /// <para> プロジェクトのルートディレクトリから設定ファイルを読み取る </para>
@@ -66,13 +96,11 @@ namespace ClangSourceGenerator
                 // yamlを読み込んで、デシリアライズ
                 var yaml = File.ReadAllText(yamlPath);
                 var deserializer = new DeserializerBuilder()
-                    // privateコンストラクタのオブジェクトもデシリアライズを許可
-                    .EnablePrivateConstructors() 
                     .IgnoreUnmatchedProperties()
                     .Build();
-                AnalysisConfig cfg = deserializer.Deserialize<AnalysisConfig>(yaml);
+                RawAnalysisConfig rawCfg = deserializer.Deserialize<RawAnalysisConfig>(yaml);
                 Console.WriteLine($"[Config] success to load _config");
-                return cfg;
+                return new AnalysisConfig(rawCfg);
             }
             catch (Exception)
             {

@@ -2,11 +2,12 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net9.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <Platforms>AnyCPU;x64</Platforms>
     <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
+    <AnalysisLevel>latest-all</AnalysisLevel>
   </PropertyGroup>
 
   <ItemGroup>
@@ -36,7 +37,7 @@
     <PackageReference Include="libClangSharp.runtime.win-x64" Version="20.1.2" />
     <PackageReference Include="Microsoft.Extensions.Configuration.CommandLine" Version="10.0.3" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
-    <PackageReference Include="Scriban" Version="6.5.2" />
+    <PackageReference Include="Scriban" Version="7.1.0" />
     <PackageReference Include="System.CommandLine" Version="2.0.3" />
     <PackageReference Include="System.Data.HashFunction.Core" Version="2.0.0" />
     <PackageReference Include="System.Data.HashFunction.Interfaces" Version="2.0.0" />

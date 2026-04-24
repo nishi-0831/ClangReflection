@@ -1,12 +1,14 @@
 using Scriban;
 using System.Collections.Concurrent;
+using System.Collections.Specialized;
 using System.Text;
 
 namespace ClangSourceGenerator
 {
 	public class CodeGenerator
 	{
-		private string _projectRoot = "";
+		private string _projectRoot = string.Empty;
+		private string _outputDir = string.Empty;
 		private AnalysisCache _cache;
 		private ReflectionParser _reflectionParser;
 		private Encoding _encoding;
@@ -17,6 +19,7 @@ namespace ClangSourceGenerator
 		{
 			_config = analysisConfig;
 			_projectRoot = projRoot.Trim();
+			_outputDir = Path.Combine(_projectRoot, _config.OutputDirectory);
 			// キャッシュファイルのパスを計算
 			string cacheFileDirectory = Path.Combine(_projectRoot, analysisConfig.CacheFileDirectory);
 			string cacheFilePath = Path.Combine(cacheFileDirectory,CacheFileName);
@@ -36,6 +39,8 @@ namespace ClangSourceGenerator
 		}
         public void Run()
 		{
+			Directory.CreateDirectory(_outputDir);
+
 			object lockObj = new();
 
 			// ヘッダファイルの数、生成をスキップした数、生成した数。コンソールに表示する
@@ -45,7 +50,7 @@ namespace ClangSourceGenerator
 			var headerFiles = GetAnalysisTargetFile();
 
             // 再生成対象のファイルを取得
-            ConcurrentBag<string> filesToRegenerate = new ConcurrentBag<string> ( _cache.FindFilesNeedingRegeneration(headerFiles));
+            ConcurrentBag<string> filesToRegenerate = new(_cache.FindFilesNeedingRegeneration(headerFiles));
 
 			var parallelOptions = new ParallelOptions()
 			{
@@ -53,7 +58,7 @@ namespace ClangSourceGenerator
 			};
 
 			// 再生成が必要なファイルなし
-			if (filesToRegenerate.Count == 0)
+			if (filesToRegenerate.IsEmpty)
 			{
 				Console.WriteLine("[Gen] All files up-to-date. No regeneration needed.");
 				return;
@@ -148,14 +153,16 @@ namespace ClangSourceGenerator
 				if (string.IsNullOrEmpty(renderedText))
 					continue;
 
+				// 生成ファイル名を計算
+				string fileNameTemplate = rule.OutputFileName;
+				string fileName = fileNameTemplate.Replace(CodeGenerationRule.ReplaceString,reflectedClass.ClassName,StringComparison.Ordinal);
+				// 生成ファイルのパス
+				string generateFilePath = Path.Combine(_outputDir, fileName);
 				// 生成した文字列を書き込んでいく
-				string fileName = $"{reflectedClass.ClassName}.generated.h";
-				string filePath = Path.GetFullPath(Path.Combine(_projectRoot, reflectedClass.Directory));
-				string generateFile = Path.GetFullPath(Path.Combine(filePath, fileName));
 				try
 				{
-					File.WriteAllText(generateFile, renderedText, _encoding);
-					Console.WriteLine($"[Gen] generate:{generateFile}");
+					File.WriteAllText(generateFilePath, renderedText, _encoding);
+					Console.WriteLine($"[Gen] generate:{generateFilePath}");
 					result = true;
 				}
 				catch (Exception ex)
@@ -167,7 +174,7 @@ namespace ClangSourceGenerator
         }
 
         /// <summary>
-        /// 指定されたコード生成ルールに基づいて、Scribanテンプレートで文字列をレンダリングする。
+        /// 指定されたコード生成ルールに基づいて、Scribanテンプレートで文字列をレンダリングする
         /// </summary>
 		/// <remarks>
 		/// ファイル読み込みの例外が発生しても、スローせずに空文字を返す
@@ -221,13 +228,18 @@ namespace ClangSourceGenerator
             }
 			// テンプレートを作成
             Template template = Template.Parse(templateString);
-
-			// テンプレートにクラスの情報を渡して、ソースを生成
+			string parsedFileRelativePath = _outputDir;
+			if(string.IsNullOrEmpty(reflectedClass.Directory) == false)
+			{
+				parsedFileRelativePath = Path.GetRelativePath(parsedFileRelativePath, reflectedClass.Directory).Replace("\\", "/");
+            }
+            // テンプレートにクラスの情報を渡して、ソースを生成
             result = template.Render(new
             {
                 @name_space = reflectedClass.NameSpace,
                 @class_name = reflectedClass.ClassName,
-                @properties = members
+                @properties = members,
+				@parsedFileRelativePath = parsedFileRelativePath
             });
 			return result;
         }
@@ -240,21 +252,13 @@ namespace ClangSourceGenerator
             // ファイルを取得
             var headerFiles = Directory.GetFiles(_projectRoot, "*.h", SearchOption.AllDirectories).ToList();
 
-			if (_config.ExcludeDirectories != null && _config.ExcludeDirectories.Length > 0)
+			if (_config.ExcludeDirectories != null && _config.ExcludeDirectories.Count > 0)
 			{
                 // 解析対象外のファイルを除外する
                 headerFiles = headerFiles.Where(file =>
 				{
-					foreach (var excludeDir in _config.ExcludeDirectories)
-					{
-						if(ContainsExcludePath(excludeDir,file))
-						{
-							return false;
-						}
-					}
-					return true;
+					return ContainsExcludePath(file) == false;
 				}).ToList();
-
 			}
 
 			return headerFiles;
@@ -262,10 +266,9 @@ namespace ClangSourceGenerator
 		/// <summary>
 		/// ファイルのパスが、解析から除外する対象か否かを返す
 		/// </summary>
-		/// <param name="excludePath">除外パス</param>
 		/// <param name="filePath">ファイルのパス</param>
 		/// <returns>除外対象の場合、またはファイルのディレクトリが取得できなかった場合は<c>true</c>を返す</returns>
-        static bool ContainsExcludePath(string excludePath,string filePath)
+        bool ContainsExcludePath(string filePath)
         {
 			// 絶対パスに正規化し、区切り文字を統一
             var fileFullPath = Path.GetFullPath(filePath);
@@ -283,10 +286,13 @@ namespace ClangSourceGenerator
 			// セグメントと除外ディレクトリが一致するか確認
 			foreach(var segment in segments)
 			{
-				// 大文字小文字は無視
-				if(string.Equals(segment,excludePath,StringComparison.OrdinalIgnoreCase))
+				foreach(var excludeSegment in _config.ExcludeDirectories)
 				{
-					return true;
+					// 大文字小文字は無視
+					if(string.Equals(segment,excludeSegment,StringComparison.OrdinalIgnoreCase))
+					{
+						return true;
+					}
 				}
 			}
 			return false;	
