@@ -15,3 +15,7 @@ CodeGenerationRules:
      MemberMetadataType: "MT_PROPERTY"
      OutputTemplate: "GenerateComponentCpp.sbn"
      OutputFileName: "{}.gen.cpp"
+  -  ClassMetadataType: "MT_ENUM"
+     OutputTemplate: "GenerateEnumHeader.sbn"
+     OutputFileName: "{}.generatedEnum.h"
+  
