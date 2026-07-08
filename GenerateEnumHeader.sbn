@@ -1,0 +1,22 @@
+// {{ class_name }}.generated.h
+#pragma once
+
+#include <nlohmann/json.hpp>
+
+{{ # 名前空間付きの完全名 }}
+{{ fully_qualified_name = "" }}
+{{- if name_space == "" }}
+	{{ fully_qualified_name = $"{ class_name }" }}
+{{- else }}
+	{{ fully_qualified_name = $"{name_space}::{ class_name }" }}
+{{- end }}
+
+NLOHMANN_JSON_SERIALIZE_ENUM( {{ fully_qualified_name }},{{ "{" }}
+	{{- for enumerator in properties}}
+		{{ "{" }}
+			{{ fully_qualified_name }}::{{ enumerator.name }},
+			"{{ enumerator.name }}"
+		{{ "}," }}
+	{{- end }}
+{{ "}" }}
+)

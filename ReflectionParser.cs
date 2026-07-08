@@ -143,8 +143,8 @@ namespace ClangSourceGenerator
                 {
                     return CXChildVisitResult.CXChildVisit_Continue;
                 }
-                // クラス定義の場合のみ情報を生成する
-                if (child.kind == CXCursorKind.CXCursor_ClassDecl && child.IsDefinition)
+                // クラス・enum定義の場合のみ情報を生成する
+                if ((child.kind == CXCursorKind.CXCursor_ClassDecl || child.kind == CXCursorKind.CXCursor_EnumDecl) && child.IsDefinition)
                 {
                     className = clang.getCursorSpelling(child).ToString();
                     nameSpace = GetTypeNameSpace(child);
@@ -156,7 +156,7 @@ namespace ClangSourceGenerator
 
                     directory = GetDirectory(trans);
                 }
-                else if(child.kind == CXCursorKind.CXCursor_FieldDecl)
+                else if(child.kind == CXCursorKind.CXCursor_FieldDecl || child.kind == CXCursorKind.CXCursor_EnumConstantDecl)
                 {
                     fields.Add(GetReflectedMember(child));
                 }
